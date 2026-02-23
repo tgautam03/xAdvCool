@@ -26,7 +26,7 @@ state = {
     'clip_z': CORE_NZ-1,
 }
 
-DESIGN_NAMES = ["Empty Channel", "Straight Channels", "Pin-Fin Staggered", "Organic Voronoi", "Optimized Voronoi"]
+DESIGN_NAMES = ["Empty Channel", "Straight Channels", "Pin-Fin Staggered", "Gyroid TPMS", "Schwarz P TPMS", "Schwarz D TPMS"]
 
 def draw_thick_line(grid, r0, c0, r1, c1, width):
     # ... (Keep existing implementation, but since I am replacing the block starting early, I need to be careful)
@@ -223,141 +223,51 @@ def generate_mask(state):
         is_solid_2d = np.minimum(dist_a, dist_b) < radius**2
         is_solid[:, :, :] = is_solid_2d[:, :, np.newaxis]
 
-    elif design_idx == 3: # Organic Voronoi
-        # Solid islands, fluid veins (ridges)
-        # Initialize all to SOLID, then carve veins
-        is_solid[:] = True
-        fluid_canvas = np.zeros((nx, ny), dtype=bool)
+    elif design_idx in [3, 4, 5]: # TPMS Structures
+        # TPMS Parameter Mapping:
+        # feature_size (Slider 1) controls Porosity (Isovalue C)
+        # spacing (Slider 2) controls Unit Cell Size (Frequency)
         
-        # Unified Params
-        thickness = channel_width
+        # 1. Porosity (Isovalue C)
+        # raw_width 1.0 -> mostly solid (C = 0.8)
+        # raw_width 10.0 -> mostly fluid (C = -0.8)
+        # (Assuming equation < C is solid)
+        C = 0.8 - ((raw_width - 1.0) / 9.0) * 1.6
         
-        # Target Cell Size driven by N_channels (vertical count)
-        # cell_size ~= Ly / N
-        cell_size = float(ny) / n_channels
-        if cell_size < 3.0: cell_size = 3.0
+        # 2. Unit Cell Size
+        # raw_count 1.0 -> small dense cells (20px)
+        # raw_count 10.0 -> large open cells (100px)
+        # Note: raw_count is derived from state['spacing']
+        cell_size = 20.0 + ((raw_count - 1.0) / 9.0) * 80.0
         
-        # Anisotropy Factor (Stretch in X to streamline flow)
-        stretch_x = 2.5 
+        # Angular frequency
+        omega = 2.0 * np.pi / cell_size
         
-        # Number of seeds ~ Area / CellArea. 
-        # We want the final density to roughly match spacing.
-        area = nx * ny
-        n_seeds = int(area / (cell_size**2))
+        # 3. Evaluate 3D Equation
+        x = np.arange(nx)
+        y = np.arange(ny)
+        z = np.arange(nz)
+        X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
         
-        # Safety limits for Voronoi seeds
-        n_seeds = max(10, min(n_seeds, 3000))
+        wx, wy, wz = X * omega, Y * omega, Z * omega
         
-        import scipy.spatial
+        if design_idx == 3: # Gyroid
+            eq = np.sin(wx)*np.cos(wy) + np.sin(wy)*np.cos(wz) + np.sin(wz)*np.cos(wx)
+        elif design_idx == 4: # Schwarz P
+            eq = np.cos(wx) + np.cos(wy) + np.cos(wz)
+        elif design_idx == 5: # Schwarz D
+            eq = (np.sin(wx)*np.sin(wy)*np.sin(wz) + 
+                  np.sin(wx)*np.cos(wy)*np.cos(wz) + 
+                  np.cos(wx)*np.sin(wy)*np.cos(wz) + 
+                  np.cos(wx)*np.cos(wy)*np.sin(wz))
         
-        # Generate random seeds in COMPRESSED space
-        # When we stretch X back, they become elongated
+        # 4. Define Solids
+        is_solid[:, :, :] = eq < C
         
-        pad = 0.2
-        # Compress the effective domain in X
-        min_x, max_x = -nx*pad / stretch_x, nx*(1+pad) / stretch_x
-        min_y, max_y = -ny*pad, ny*(1+pad)
-        
-        seeds = np.random.rand(n_seeds, 2)
-        seeds[:, 0] = min_x + seeds[:, 0] * (max_x - min_x)
-        seeds[:, 1] = min_y + seeds[:, 1] * (max_y - min_y)
-        
-        # Lloyd's Relaxation in Compressed Space (1 iteration)
-        # This makes cells more regular (isotropic) in compressed space -> anisotropic in real space
-        vor = scipy.spatial.Voronoi(seeds)
-        
-        # Draw Ridges mapping back to Real Space
-        verts = vor.vertices.copy()
-        
-        # Stretch X back to fill the domain
-        verts[:, 0] *= stretch_x
-        
-        for i, (p1_idx, p2_idx) in enumerate(vor.ridge_vertices):
-            if p1_idx == -1 or p2_idx == -1: continue
-            
-            p1 = verts[p1_idx]
-            p2 = verts[p2_idx]
-            
-            # Draw with thickness
-            draw_thick_line(fluid_canvas, p1[0], p1[1], p2[0], p2[1], thickness)
-            
-        # Open Inlet/Outlet Borders firmly
-        # Draw a "Manifold" channel at x=0 and x=nx
-        manifold_width = thickness * 1.5
-        draw_thick_line(fluid_canvas, 0, 0, 0, ny-1, manifold_width)
-        draw_thick_line(fluid_canvas, nx-1, 0, nx-1, ny-1, manifold_width)
-        
-        is_solid[fluid_canvas[:, :, np.newaxis].repeat(nz, axis=2)] = False
-
-    elif design_idx == 4: # Optimized Voronoi (Heat-Guided Density)
-        # More, smaller Voronoi cells near hot spots = more fin surface area
-        # Fixed channel width (capped to never consume solid)
-        # Hot spots keep solid for conduction, but get more fins per unit area
-        is_solid[:] = True
-        fluid_canvas = np.zeros((nx, ny), dtype=bool)
-        
-        cell_size = float(ny) / n_channels
-        if cell_size < 3.0: cell_size = 3.0
-        
-        stretch_x = 2.5
-        
-        heat_map = generate_processor_heatmap(nx, ny)
-        
-        # Target seed count (base)
-        area = nx * ny
-        n_seeds = int(area / (cell_size**2))
-        n_seeds = max(20, min(n_seeds, 3000))
-        
-        pad = 0.2
-        min_x, max_x = -nx*pad / stretch_x, nx*(1+pad) / stretch_x
-        min_y, max_y = -ny*pad, ny*(1+pad)
-        
-        # Mild heat-guided density: 2-3x more seeds near hot spots (not 10x)
-        n_candidates = n_seeds * 8
-        candidates = np.random.rand(n_candidates, 2)
-        candidates[:, 0] = min_x + candidates[:, 0] * (max_x - min_x)
-        candidates[:, 1] = min_y + candidates[:, 1] * (max_y - min_y)
-        
-        real_x = np.clip((candidates[:, 0] * stretch_x).astype(int), 0, nx-1)
-        real_y = np.clip(candidates[:, 1].astype(int), 0, ny-1)
-        heat_vals = heat_map[real_x, real_y]
-        
-        # Mild bias: 0.35 base + 0.65 heat → ~2-3x density at hot spots vs cool
-        accept_prob = 0.35 + 0.65 * heat_vals
-        accepted_mask = np.random.rand(n_candidates) < accept_prob
-        accepted = candidates[accepted_mask]
-        
-        if len(accepted) >= n_seeds:
-            seeds = accepted[:n_seeds]
-        else:
-            n_extra = n_seeds - len(accepted)
-            extra = np.random.rand(n_extra, 2)
-            extra[:, 0] = min_x + extra[:, 0] * (max_x - min_x)
-            extra[:, 1] = min_y + extra[:, 1] * (max_y - min_y)
-            seeds = np.vstack([accepted, extra])
-        
-        import scipy.spatial
-        
-        vor = scipy.spatial.Voronoi(seeds)
-        
-        verts = vor.vertices.copy()
-        verts[:, 0] *= stretch_x
-        
-        # FIXED channel width, capped to never eat more than 40% of cell diameter
-        thickness = min(channel_width, cell_size * 0.4)
-        
-        for i, (p1_idx, p2_idx) in enumerate(vor.ridge_vertices):
-            if p1_idx == -1 or p2_idx == -1: continue
-            p1 = verts[p1_idx]
-            p2 = verts[p2_idx]
-            draw_thick_line(fluid_canvas, p1[0], p1[1], p2[0], p2[1], thickness)
-        
-        # Inlet/Outlet Manifolds
-        manifold_width = thickness * 2.0
-        draw_thick_line(fluid_canvas, 0, 0, 0, ny-1, manifold_width)
-        draw_thick_line(fluid_canvas, nx-1, 0, nx-1, ny-1, manifold_width)
-        
-        is_solid[fluid_canvas[:, :, np.newaxis].repeat(nz, axis=2)] = False
+        # 5. Open Inlet/Outlet Manifolds
+        # Carve out 5 pixels of pure fluid at the entry and exit to distribute flow evenly into the complex 3D TPMS structure
+        is_solid[:5, :, :] = False
+        is_solid[-5:, :, :] = False
 
 
 

@@ -6,7 +6,7 @@ import shutil
 
 from src.fluid_engine3d import (BC_SOLID, BC_FLUID, BC_INLET, BC_OUTLET, 
                                 compute_equilibrium_kernel, compute_macroscopic_kernel,
-                                bgk_collision_kernel, streaming_kernel, compute_stats_kernel)
+                                bgk_collision_kernel, kbc_collision_kernel, streaming_kernel, compute_stats_kernel)
 
 
 def main():
@@ -35,8 +35,26 @@ def main():
     nx, ny, nz = mask.shape
     print(f"Simulation Domain: {nx}x{ny}x{nz}")
 
+    # Calculate precise geometric properties for Reynolds number
+    buf = 10
+    core = mask[buf:-buf, 1:-1, 4:-2] 
+    fluid_mask = (core != BC_SOLID)
+    solid_mask = (core == BC_SOLID)
+    
+    V_total = core.size
+    V_fluid = np.sum(fluid_mask)
+    porosity = V_fluid / V_total if V_total > 0 else 1.0
+    
+    faces_x = np.sum(fluid_mask[1:,:,:] & solid_mask[:-1,:,:]) + np.sum(solid_mask[1:,:,:] & fluid_mask[:-1,:,:])
+    faces_y = np.sum(fluid_mask[:,1:,:] & solid_mask[:,:-1,:]) + np.sum(solid_mask[:,1:,:] & fluid_mask[:,:-1,:])
+    faces_z = np.sum(fluid_mask[:,:,1:] & solid_mask[:,:,:-1]) + np.sum(solid_mask[:,:,1:] & fluid_mask[:,:,:-1])
+    A_wetted = faces_x + faces_y + faces_z
+    
+    Dh = 4.0 * V_fluid / A_wetted if A_wetted > 0 else float(ny)
+    print(f"Geometry -> Porosity: {porosity:.2f}, Hydraulic Diameter (Dh): {Dh:.2f} LU")
+
     # Simulation Parameters
-    max_steps = 500
+    max_steps = 100
     stats_every = 100 # Check convergence/Update TQDM (Decoupled from disk I/O)
     
     # Convergence Criteria
@@ -47,11 +65,15 @@ def main():
     device = "cuda"
     
     # Fluid Properties
-    tau_fluid = 0.55 # More viscous fluid
+    tau_fluid = 0.502 # More viscous fluid
     rho_outlet = 1.0
     
+    # --- COLLISION MODEL ---
+    # "KBC" for Entropic stability at high Re, or "BGK" for standard SRT
+    COLLISION_MODEL = "KBC"
+    
     # --- PUMP CONTROL SETUP ---
-    u_inlet_val = 0.035   # Initial guess for velocity
+    u_inlet_val = 0.03   # Initial guess for velocity
     u_inlet_array = wp.array([u_inlet_val], dtype=float, device=device)
     
     # Initial Conditions (Rho=1, U=0, T=0)
@@ -132,7 +154,11 @@ def main():
     wp.capture_begin(device=device)
     
     # --- FLUID STEP ---
-    wp.launch(bgk_collision_kernel, dim=(nx, ny, nz), inputs=[f_old, f_eq, f_new, domain_mask, tau_fluid], device=device)
+    if COLLISION_MODEL == "KBC":
+        wp.launch(kbc_collision_kernel, dim=(nx, ny, nz), inputs=[f_old, f_eq, f_new, domain_mask, tau_fluid], device=device)
+    else:
+        wp.launch(bgk_collision_kernel, dim=(nx, ny, nz), inputs=[f_old, f_eq, f_new, domain_mask, tau_fluid], device=device)
+
     wp.launch(streaming_kernel, dim=(nx, ny, nz), inputs=[f_new, f_old, domain_mask, u_inlet_array, rho_outlet, nx, ny, nz], device=device)
     wp.launch(compute_macroscopic_kernel, dim=(nx, ny, nz), inputs=[f_old, rho_warp, u], device=device)
     wp.launch(compute_equilibrium_kernel, dim=(nx, ny, nz), inputs=[rho_warp, u, f_eq], device=device)
@@ -271,13 +297,14 @@ def main():
             prev_ke = ke
             prev_max_T = max_T
             
-            # Calculate Reynolds Number (Re = U * L / nu)
-            # Using domain height (ny) as characteristic length for global flow
+            # Calculate Accurate Instantaneous Reynolds Number
             nu = (tau_fluid - 0.5) / 3.0
-            Re = avg_v * ny / nu
+            u_mean = u_inlet_val / porosity
+            Re = (u_mean * Dh) / nu
 
             # Update TQDM
             pbar.set_postfix({
+                "Re": f"{Re:.1f}",
                 "U_in": f"{u_inlet_val:.4f}",
                 "Power": f"{power_measured:.4f}",
                 "MaxV": f"{max_v:.4f}",

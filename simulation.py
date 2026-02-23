@@ -35,6 +35,24 @@ def main():
     nx, ny, nz = mask.shape
     print(f"Simulation Domain: {nx}x{ny}x{nz}")
 
+    # Calculate precise geometric properties for Reynolds number
+    buf = 10
+    core = mask[buf:-buf, 1:-1, 4:-2] 
+    fluid_mask = (core != BC_SOLID)
+    solid_mask = (core == BC_SOLID)
+    
+    V_total = core.size
+    V_fluid = np.sum(fluid_mask)
+    porosity = V_fluid / V_total if V_total > 0 else 1.0
+    
+    faces_x = np.sum(fluid_mask[1:,:,:] & solid_mask[:-1,:,:]) + np.sum(solid_mask[1:,:,:] & fluid_mask[:-1,:,:])
+    faces_y = np.sum(fluid_mask[:,1:,:] & solid_mask[:,:-1,:]) + np.sum(solid_mask[:,1:,:] & fluid_mask[:,:-1,:])
+    faces_z = np.sum(fluid_mask[:,:,1:] & solid_mask[:,:,:-1]) + np.sum(solid_mask[:,:,1:] & fluid_mask[:,:,:-1])
+    A_wetted = faces_x + faces_y + faces_z
+    
+    Dh = 4.0 * V_fluid / A_wetted if A_wetted > 0 else float(ny)
+    print(f"Geometry -> Porosity: {porosity:.2f}, Hydraulic Diameter (Dh): {Dh:.2f} LU")
+
     # Simulation Parameters
     max_steps = 40000
     stats_every = 100 # Check convergence/Update TQDM (Decoupled from disk I/O)
@@ -47,11 +65,11 @@ def main():
     device = "cuda"
     
     # Fluid Properties
-    tau_fluid = 0.55 # More viscous fluid
+    tau_fluid = 0.52 # More viscous fluid
     rho_outlet = 1.0
     
     # --- PUMP CONTROL SETUP ---
-    u_inlet_val = 0.035   # Initial guess for velocity
+    u_inlet_val = 0.03   # Initial guess for velocity
     u_inlet_array = wp.array([u_inlet_val], dtype=float, device=device)
     
     # Initial Conditions (Rho=1, U=0, T=0)
@@ -271,13 +289,14 @@ def main():
             prev_ke = ke
             prev_max_T = max_T
             
-            # Calculate Reynolds Number (Re = U * L / nu)
-            # Using domain height (ny) as characteristic length for global flow
+            # Calculate Accurate Instantaneous Reynolds Number
             nu = (tau_fluid - 0.5) / 3.0
-            Re = avg_v * ny / nu
+            u_mean = u_inlet_val / porosity
+            Re = (u_mean * Dh) / nu
 
             # Update TQDM
             pbar.set_postfix({
+                "Re": f"{Re:.1f}",
                 "U_in": f"{u_inlet_val:.4f}",
                 "Power": f"{power_measured:.4f}",
                 "MaxV": f"{max_v:.4f}",
