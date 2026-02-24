@@ -33,13 +33,18 @@ def viz_velocity():
         print(f"Warning: Could not generate heatmap overlay: {e}")
         hm_grid = None
     
-    result_file = "results/final_velocity.npy"
-    if not os.path.exists(result_file):
-        print(f"Error: {result_file} not found.")
-        return
-    
-    print(f"[Velocity] Loading {result_file}...")
-    u = np.load(result_file)
+    import glob
+    vel_files = sorted(glob.glob("results/time_stamps/velocity_*.npy"))
+    if not vel_files:
+        result_file = "results/final_velocity.npy"
+        if os.path.exists(result_file):
+            vel_files = [result_file]
+        else:
+            print(f"Error: {result_file} not found.")
+            return
+
+    print(f"[Velocity] Loaded {len(vel_files)} time steps. Loading {vel_files[-1]}...")
+    u = np.load(vel_files[-1])
     v_mag = np.linalg.norm(u, axis=3)
     
     # Mask solids
@@ -87,8 +92,30 @@ def viz_velocity():
     vol_actor = pl.add_volume(grid, scalars='velocity', cmap='coolwarm', opacity=opacity, show_scalar_bar=True, clim=[0, v_max])
     
     # Dynamic State
-    state = {'z': nz//2, 'y': ny//2}
+    state = {'z': nz//2, 'y': ny//2, 't': len(vel_files) - 1, 'vol_vis': True}
     actors = {}
+
+    def update_t():
+        if not vel_files: return
+        t_idx = state['t']
+        u_t = np.load(vel_files[t_idx])
+        v_mag_t = np.linalg.norm(u_t, axis=3)
+        v_mag_t[solidv] = np.nan
+        grid.cell_data['velocity'] = v_mag_t.flatten(order='F')
+        
+        # Rebuild point data so slices pick it up
+        new_mesh = grid.cell_data_to_point_data()
+        mesh.point_data['velocity'] = new_mesh.point_data['velocity']
+        
+        nonlocal vol_actor
+        try:
+            pl.remove_actor(vol_actor)
+        except Exception:
+            pass
+        vol_actor = pl.add_volume(grid, scalars='velocity', cmap='coolwarm', opacity=opacity, show_scalar_bar=False, clim=[0, v_max])
+        vol_actor.SetVisibility(state['vol_vis'])
+        
+        update()
     
     def update():
         for a in list(actors.keys()):
@@ -110,9 +137,12 @@ def viz_velocity():
     
     def cb_z(v): state['z'] = int(v); update()
     def cb_y(v): state['y'] = int(v); update()
+    def cb_t(v): state['t'] = int(v); update_t()
     
     pl.add_slider_widget(cb_z, [0, nz], value=state['z'], title="Z Slice", pointa=(0.05, 0.9), pointb=(0.35, 0.9), fmt="%.0f")
     pl.add_slider_widget(cb_y, [0, ny], value=state['y'], title="Y Slice", pointa=(0.4, 0.9), pointb=(0.7, 0.9), fmt="%.0f")
+    if len(vel_files) > 1:
+        pl.add_slider_widget(cb_t, [0, len(vel_files)-1], value=state['t'], title="Time Step", pointa=(0.75, 0.9), pointb=(0.95, 0.9), fmt="%.0f")
     
     def cb_solid_toggle(flag):
         solid_actor.SetVisibility(flag)
@@ -122,7 +152,9 @@ def viz_velocity():
     pl.add_text("Solids", position=(60, 20), font_size=10)
 
     def cb_volume_toggle(flag):
-        vol_actor.SetVisibility(flag)
+        state['vol_vis'] = flag
+        if vol_actor:
+            vol_actor.SetVisibility(flag)
 
     pl.add_checkbox_button_widget(cb_volume_toggle, value=True, color_on='orange', color_off='grey',
                                   position=(10, 60), size=40, border_size=2)
@@ -155,13 +187,18 @@ def viz_thermal():
         print(f"Warning: Could not generate heatmap overlay: {e}")
         hm_grid = None
     
-    thermal_file = "results/final_temperature.npy"
-    if not os.path.exists(thermal_file):
-        print(f"Error: {thermal_file} not found.")
-        return
+    import glob
+    therm_files = sorted(glob.glob("results/time_stamps/temperature_*.npy"))
+    if not therm_files:
+        thermal_file = "results/final_temperature.npy"
+        if os.path.exists(thermal_file):
+            therm_files = [thermal_file]
+        else:
+            print(f"Error: {thermal_file} not found.")
+            return
     
-    print(f"[Thermal] Loading {thermal_file}...")
-    T_field = np.load(thermal_file)
+    print(f"[Thermal] Loaded {len(therm_files)} time steps. Loading {therm_files[-1]}...")
+    T_field = np.load(therm_files[-1])
     t_max = np.max(T_field)
     
     # Setup Mesh
@@ -194,8 +231,27 @@ def viz_thermal():
     vol_actor = pl.add_volume(grid, scalars='temperature', cmap='inferno', opacity=opacity, show_scalar_bar=True)
     
     # Dynamic State
-    state = {'z': nz//2, 'y': ny//2}
+    state = {'z': nz//2, 'y': ny//2, 't': len(therm_files) - 1, 'vol_vis': True}
     actors = {}
+
+    def update_t():
+        if not therm_files: return
+        t_idx = state['t']
+        T_t = np.load(therm_files[t_idx])
+        grid.cell_data['temperature'] = T_t.flatten(order='F')
+        
+        new_mesh = grid.cell_data_to_point_data()
+        mesh.point_data['temperature'] = new_mesh.point_data['temperature']
+        
+        nonlocal vol_actor
+        try:
+            pl.remove_actor(vol_actor)
+        except Exception:
+            pass
+        vol_actor = pl.add_volume(grid, scalars='temperature', cmap='inferno', opacity=opacity, show_scalar_bar=False)
+        vol_actor.SetVisibility(state['vol_vis'])
+        
+        update()
     
     def update():
         for a in list(actors.keys()):
@@ -217,9 +273,12 @@ def viz_thermal():
     
     def cb_z(v): state['z'] = int(v); update()
     def cb_y(v): state['y'] = int(v); update()
+    def cb_t(v): state['t'] = int(v); update_t()
     
     pl.add_slider_widget(cb_z, [0, nz], value=state['z'], title="Z Slice", pointa=(0.05, 0.9), pointb=(0.35, 0.9), fmt="%.0f")
     pl.add_slider_widget(cb_y, [0, ny], value=state['y'], title="Y Slice", pointa=(0.4, 0.9), pointb=(0.7, 0.9), fmt="%.0f")
+    if len(therm_files) > 1:
+        pl.add_slider_widget(cb_t, [0, len(therm_files)-1], value=state['t'], title="Time Step", pointa=(0.75, 0.9), pointb=(0.95, 0.9), fmt="%.0f")
     
     def cb_solid_toggle(flag):
         solid_actor.SetVisibility(flag)
@@ -229,7 +288,9 @@ def viz_thermal():
     pl.add_text("Solids", position=(60, 20), font_size=10)
 
     def cb_volume_toggle(flag):
-        vol_actor.SetVisibility(flag)
+        state['vol_vis'] = flag
+        if vol_actor:
+            vol_actor.SetVisibility(flag)
 
     pl.add_checkbox_button_widget(cb_volume_toggle, value=True, color_on='orange', color_off='grey',
                                   position=(10, 60), size=40, border_size=2)

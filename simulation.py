@@ -17,6 +17,11 @@ def main():
             os.remove(file)
         except OSError:
             pass
+    for file in glob.glob("results/time_stamps/*.npy"):
+        try:
+            os.remove(file)
+        except OSError:
+            pass
 
     print("Initializing Warp...")
     wp.init()
@@ -56,6 +61,7 @@ def main():
     # Simulation Parameters
     max_steps = 40000
     stats_every = 100 # Check convergence/Update TQDM (Decoupled from disk I/O)
+    save_every = 200 # Save full fields to disk
     
     # Convergence Criteria
     tol_ke = 1e-7
@@ -179,6 +185,7 @@ def main():
     if os.path.exists("results"):
         shutil.rmtree("results")
     os.makedirs("results", exist_ok=True)
+    os.makedirs("results/time_stamps", exist_ok=True)
     
     pbar = tqdm(total=max_steps)
     
@@ -191,6 +198,11 @@ def main():
 
     step = 0
     prev_max_T = 0.0
+
+    u_np = u.numpy()
+    np.save(f"results/time_stamps/velocity_{step:05d}.npy", u_np)
+    T_np = T.numpy()
+    np.save(f"results/time_stamps/temperature_{step:05d}.npy", T_np)
     
     while step < max_steps:
         wp.capture_launch(graph)
@@ -311,6 +323,12 @@ def main():
                 print(f"\n\u2713 Converged at step {step}")
                 print(f"Final dKE: {d_ke:.2e}, dMaxT: {d_max_T:.2e}")
                 break
+
+        if step % save_every == 0:
+            u_np = u.numpy()
+            np.save(f"results/time_stamps/velocity_{step:05d}.npy", u_np)
+            T_np = T.numpy()
+            np.save(f"results/time_stamps/temperature_{step:05d}.npy", T_np)
         
         pbar.update(1)
 
