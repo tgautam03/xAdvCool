@@ -1,4 +1,4 @@
-# xAdvCool: Advanced 3D Conjugate Heat Transfer LBM Solver
+# xAdvCool: Advanced 3D Conjugate Heat Transfer LBM Solver (NeurIPS 2026)
 
 **xAdvCool** is a high-performance, GPU-accelerated 3D Lattice Boltzmann Method (LBM) solver designed for simulating **Conjugate Heat Transfer (CHT)** in microchannel cooling systems. Built on NVIDIA Warp, it enables rapid simulation of complex fluid-thermal interactions in intricate 3D geometries, specifically tailored for generating large-scale datasets for machine learning benchmarks like NeurIPS.
 
