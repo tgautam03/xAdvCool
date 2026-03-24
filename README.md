@@ -12,7 +12,6 @@
 *   **Scalable Domains:** Capable of simulating millions of voxels with low memory overhead.
 
 ### 2. Advanced Collision Physics
-*   **Entropic KBC Solver:** Implements the Karlin-Bösch-Chikatamarla (KBC) collision model. This entropic stabilizer ensures numerical stability at extremely low viscosities (High Reynolds numbers) without adding artificial dissipation.
 *   **Standard BGK:** Includes the classic single-relaxation-time (BGK) operator for laminar, high-viscosity regimes.
 *   **CHT-Coupled Thermal Solver:** Simulates heat conduction in solids and convection in fluids with direct thermal coupling at the interface.
 
