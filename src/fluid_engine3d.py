@@ -16,7 +16,7 @@ BC_OUTLET = 3
 
 # D3Q19 Lattice vectors as 19x3 matrix (col 0 = ex, col 1 = ey, col 2 = ez)
 # Order: Rest, 6 face-aligned, 12 edge-aligned
-E_CONST = wp.constant(wp.mat((19, 3), dtype=wp.int32)(
+E_CONST = wp.constant(wp.types.matrix((19, 3), dtype=wp.int32)(
     0, 0, 0,    # 0: Rest
     1, 0, 0,    # 1: +X
    -1, 0, 0,    # 2: -X
@@ -39,7 +39,7 @@ E_CONST = wp.constant(wp.mat((19, 3), dtype=wp.int32)(
 ))
 
 # D3Q19 Weights: 1/3 (rest), 1/18 (face), 1/36 (edge)
-W_CONST = wp.constant(wp.vec(19, dtype=wp.float32)(
+W_CONST = wp.constant(wp.types.vector(19, dtype=wp.float32)(
     1.0/3.0,                                    # Rest
     1.0/18.0, 1.0/18.0, 1.0/18.0, 1.0/18.0, 1.0/18.0, 1.0/18.0,  # Face-aligned
     1.0/36.0, 1.0/36.0, 1.0/36.0, 1.0/36.0, 1.0/36.0, 1.0/36.0,  # Edge-aligned
@@ -48,7 +48,7 @@ W_CONST = wp.constant(wp.vec(19, dtype=wp.float32)(
 
 # Opposite directions for bounce-back
 # 0->0, 1<->2, 3<->4, 5<->6, 7<->8, 9<->10, 11<->12, 13<->14, 15<->16, 17<->18
-OPPOSITE_CONST = wp.constant(wp.vec(19, dtype=wp.int32)(
+OPPOSITE_CONST = wp.constant(wp.types.vector(19, dtype=wp.int32)(
     0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15, 18, 17
 ))
 

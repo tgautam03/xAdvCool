@@ -66,9 +66,11 @@ def draw_thick_line(grid, r0, c0, r1, c1, width):
     # ---------------------------
     # Processor Heat Map Utility
     # ---------------------------
-def generate_processor_heatmap(nx, ny):
+def generate_dual_core_heatmap(nx, ny):
     """
     Generates a 2D normalized heat map (0.0 to 1.0) representing a Dual-Core Processor.
+    Features two high-power CPU cores, an L3 cache strip, and background leakage.
+    Pass the returned array as `heat_source[:, :, 0]` in run_simulation().
     """
     import scipy.ndimage as ndimage
     
@@ -102,6 +104,12 @@ def generate_processor_heatmap(nx, ny):
         heat_map /= heat_map.max()
         
     return heat_map
+
+
+def generate_processor_heatmap(nx, ny):
+    """Alias for generate_dual_core_heatmap — kept for backward compatibility."""
+    return generate_dual_core_heatmap(nx, ny)
+
 
 def generate_mask(state):
     """Generate the full mask with current state."""
