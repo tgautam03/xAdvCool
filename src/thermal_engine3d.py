@@ -85,6 +85,65 @@ def thermal_bgk_collision_kernel(g_old: wp.array4d(dtype=float),            # In
             
         g_new[i, x, y, z] = val
 
+#######################################################################
+######## Fused Thermal Equilibrium + Collision (no g_eq array) ########
+#######################################################################
+@wp.kernel
+def fused_thermal_equilibrium_collision_kernel(
+    g_old: wp.array4d(dtype=float),            # Input: (19, nx, ny, nz) # type:ignore
+    u: wp.array3d(dtype=wp.vec3f),             # Input: fluid velocity # type:ignore
+    T: wp.array3d(dtype=float),                # Input: temperature field # type:ignore
+    g_new: wp.array4d(dtype=float),            # Output: (19, nx, ny, nz) # type:ignore
+    mask: wp.array3d(dtype=int),               # Domain mask # type:ignore
+    tau_fluid: float,
+    tau_solid: float,
+    heat_source_mask: wp.array3d(dtype=float), # type:ignore
+    heat_source_power: float
+):
+    """Computes thermal equilibrium in registers and applies BGK collision + heat source
+    in one pass. Eliminates the separate g_eq array and its global memory round-trip."""
+    x, y, z = wp.tid()
+
+    m = mask[x, y, z]
+
+    # Select relaxation time based on phase
+    tau = tau_fluid
+    if m == BC_SOLID:
+        tau = tau_solid
+    omega = 1.0 / tau
+
+    # Heat source
+    mask_val = heat_source_mask[x, y, z]
+    q_val = mask_val * heat_source_power
+
+    # Get local temperature
+    local_T = T[x, y, z]
+
+    # Get velocity (zero in solid for CHT)
+    local_u = u[x, y, z]
+    if m == BC_SOLID:
+        local_u = wp.vec3f(0.0, 0.0, 0.0)
+    u_sq = wp.dot(local_u, local_u)
+
+    for i in range(19):
+        ex = E_CONST[i, 0]
+        ey = E_CONST[i, 1]
+        ez = E_CONST[i, 2]
+        e_u = float(ex) * local_u.x + float(ey) * local_u.y + float(ez) * local_u.z
+
+        # Equilibrium computed in register (never written to global memory)
+        g_eq_i = W_CONST[i] * local_T * (
+            1.0 + 3.0 * e_u + 4.5 * (e_u * e_u) - 1.5 * u_sq
+        )
+
+        val = g_old[i, x, y, z] - omega * (g_old[i, x, y, z] - g_eq_i)
+
+        # Source term
+        if q_val > 0.0:
+            val += W_CONST[i] * (1.0 - 0.5 * omega) * q_val
+
+        g_new[i, x, y, z] = val
+
 @wp.kernel
 def thermal_streaming_kernel(g_post_collision: wp.array4d(dtype=float), # Input
                              g_streamed: wp.array4d(dtype=float),       # Output

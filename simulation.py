@@ -6,7 +6,8 @@ import shutil
 
 from src.fluid_engine3d import (BC_SOLID, BC_FLUID, BC_INLET, BC_OUTLET, 
                                 compute_equilibrium_kernel, compute_macroscopic_kernel,
-                                bgk_collision_kernel, streaming_kernel, compute_stats_kernel)
+                                fused_equilibrium_collision_kernel,
+                                streaming_kernel, compute_stats_kernel)
 
 
 def run_simulation(mask,
@@ -69,7 +70,8 @@ def run_simulation(mask,
     f_new = wp.zeros((19, nx, ny, nz), dtype=wp.float32, device=device)
     f_eq = wp.zeros((19, nx, ny, nz), dtype=wp.float32, device=device)
     
-    from src.thermal_engine3d import (compute_thermal_equilibrium_kernel, thermal_bgk_collision_kernel, 
+    from src.thermal_engine3d import (compute_thermal_equilibrium_kernel,
+                                    fused_thermal_equilibrium_collision_kernel,
                                     thermal_streaming_kernel, compute_thermal_macroscopic_kernel,
                                     compute_thermal_stats_kernel)
     
@@ -98,12 +100,12 @@ def run_simulation(mask,
     wp.copy(f_old, f_eq)
     
     wp.capture_begin(device=device)
-    wp.launch(bgk_collision_kernel, dim=(nx, ny, nz), inputs=[f_old, f_eq, f_new, domain_mask, tau_fluid], device=device)
+    # Fluid: fused equilibrium + collision (eq computed in registers, no f_eq round-trip)
+    wp.launch(fused_equilibrium_collision_kernel, dim=(nx, ny, nz), inputs=[f_old, rho_warp, u, f_new, domain_mask, tau_fluid], device=device)
     wp.launch(streaming_kernel, dim=(nx, ny, nz), inputs=[f_new, f_old, domain_mask, u_inlet_array, rho_outlet, nx, ny, nz], device=device)
     wp.launch(compute_macroscopic_kernel, dim=(nx, ny, nz), inputs=[f_old, rho_warp, u], device=device)
-    wp.launch(compute_equilibrium_kernel, dim=(nx, ny, nz), inputs=[rho_warp, u, f_eq], device=device)
-    wp.launch(compute_thermal_equilibrium_kernel, dim=(nx, ny, nz), inputs=[rho_warp, u, T, g_eq, domain_mask], device=device)
-    wp.launch(thermal_bgk_collision_kernel, dim=(nx, ny, nz), inputs=[g_old, g_eq, g_new, domain_mask, tau_th_fluid, tau_th_solid, heat_source_mask, heat_power], device=device)
+    # Thermal: fused equilibrium + collision (eq computed in registers, no g_eq round-trip)
+    wp.launch(fused_thermal_equilibrium_collision_kernel, dim=(nx, ny, nz), inputs=[g_old, u, T, g_new, domain_mask, tau_th_fluid, tau_th_solid, heat_source_mask, heat_power], device=device)
     wp.launch(thermal_streaming_kernel, dim=(nx, ny, nz), inputs=[g_new, g_old, domain_mask, t_inlet, nx, ny, nz], device=device)
     wp.launch(compute_thermal_macroscopic_kernel, dim=(nx, ny, nz), inputs=[g_old, T], device=device)
     graph = wp.capture_end(device=device)

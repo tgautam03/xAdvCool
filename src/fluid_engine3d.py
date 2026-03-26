@@ -136,6 +136,46 @@ def bgk_collision_kernel(f_old: wp.array4d(dtype=float),            # Input: (19
             f_post_collision[i, x, y, z] = f_old[i, x, y, z]
 
 #######################################################################
+############ Fused Equilibrium + Collision (no f_eq array) ############
+#######################################################################
+@wp.kernel
+def fused_equilibrium_collision_kernel(
+    f_old: wp.array4d(dtype=float),            # Input: (19, nx, ny, nz) # type:ignore
+    rho: wp.array3d(dtype=float),              # Input: (nx, ny, nz) # type:ignore
+    u: wp.array3d(dtype=wp.vec3f),             # Input: (nx, ny, nz) # type:ignore
+    f_post_collision: wp.array4d(dtype=float), # Output: (19, nx, ny, nz) # type:ignore
+    domain_mask: wp.array3d(dtype=int),        # 3D mask # type:ignore
+    tau: float
+):
+    """Computes equilibrium in registers and applies BGK collision in one pass.
+    Eliminates the need for a separate f_eq array and its global memory round-trip."""
+    x, y, z = wp.tid()
+
+    mask = domain_mask[x, y, z]
+    omega = 1.0 / tau
+
+    if mask == BC_FLUID or mask == BC_INLET or mask == BC_OUTLET:
+        local_rho = rho[x, y, z]
+        local_u = u[x, y, z]
+        u_sq = wp.dot(local_u, local_u)
+
+        for i in range(19):
+            ex = E_CONST[i, 0]
+            ey = E_CONST[i, 1]
+            ez = E_CONST[i, 2]
+            e_u = float(ex) * local_u.x + float(ey) * local_u.y + float(ez) * local_u.z
+
+            # Equilibrium computed in register (never written to global memory)
+            f_eq_i = W_CONST[i] * local_rho * (
+                1.0 + 3.0 * e_u + 4.5 * (e_u * e_u) - 1.5 * u_sq
+            )
+
+            f_post_collision[i, x, y, z] = f_old[i, x, y, z] - omega * (f_old[i, x, y, z] - f_eq_i)
+    else:
+        for i in range(19):
+            f_post_collision[i, x, y, z] = f_old[i, x, y, z]
+
+#######################################################################
 #################### Streaming Operator: f_streamed ###################
 #######################################################################
 @wp.kernel
