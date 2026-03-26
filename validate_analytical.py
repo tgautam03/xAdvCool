@@ -180,17 +180,12 @@ def test_3d_rectangular_poiseuille(device="cuda"):
     a = w_cells / 2.0
     b = h_cells / 2.0
     
-    # Instead of deriving theoretical dP/dx and integrating, we normalize against 
-    # the exact maximum centerline velocity from the simulation. 
-    # This specifically validates the *shape* of the 2D cross-section and the momentum transport 
-    # mechanics (viscosity/wall friction ratios), which is standard practice for LBM profile validation.
-    
     u_centerline_sim = np.max(u_slice)
-    
+
     y = np.linspace(-w_cells/2 + 0.5, w_cells/2 - 0.5, w_cells)
     z = np.linspace(-h_cells/2 + 0.5, h_cells/2 - 0.5, h_cells)
     Y, Z = np.meshgrid(y, z, indexing='ij')
-    
+
     # Analytical series shape function (unnormalized)
     def poiseuille_shape(Y, Z, a, b, num_terms=30):
         val = np.zeros_like(Y)
@@ -200,57 +195,53 @@ def test_3d_rectangular_poiseuille(device="cuda"):
             term3 = np.cos(i * np.pi * Y / (2*a))
             val += term1 * term2 * term3
         return val
-        
+
     shape_field = poiseuille_shape(Y, Z, a, b)
-    shape_max = np.max(shape_field)
-    
-    # Normalized analytical profile scaled to the same center velocity
-    u_analytical = (shape_field / shape_max) * u_centerline_sim
-    
-    # Extract just the fluid cells
-    u_sim_fluid = u_slice[1:-1, 1:-1]
-    
-    abs_errors = np.abs(u_sim_fluid - u_analytical)
-    rel_errors = abs_errors / u_centerline_sim
-    max_error = np.max(rel_errors) * 100.0
-    
-    print(f"Centerline Velocity: {u_centerline_sim:.5f}")
-    print(f"Max Shape Error: {max_error:.3f}%")
-    
-    if max_error <= 3.0:
-        print("✓ SHAPE VALIDATION PASSED (<3% Error)")
-    else:
-        print("✗ SHAPE VALIDATION FAILED (>3% Error)")
-    
-    # --- Secondary: Absolute Pressure-Gradient Check ---
+
+    # --- Absolute Validation: derive analytical velocity from measured pressure gradient ---
     rho_np_final = rho_warp.numpy()
     c_s_sq = 1.0 / 3.0
     nu = c_s_sq * (tau_fluid - 0.5)
-    
+    mu = nu  # rho ~ 1
+
     # Measure dP/dx from density at two fully-developed x-planes
     x1, x2 = 10, nx - 15
     rho_plane1 = np.mean(rho_np_final[x1, 1:-1, 1:-1])
     rho_plane2 = np.mean(rho_np_final[x2, 1:-1, 1:-1])
     dpdx_sim = c_s_sq * (rho_plane2 - rho_plane1) / float(x2 - x1)
-    
-    # Theoretical: For a rectangular duct, dP/dx = -u_max / (shape_max * 4a^2 / (-dP/dx * something))
-    # Simpler: use the Hagen-Poiseuille relation for rectangular duct
-    # u(y,z) = -(1/(2*mu)) * dP/dx * [a^2 - y^2] + corrections
-    # For the full series: u_max = -dP/dx * (4*a^2 / pi^3) * shape_max_unnormalized / mu
-    # mu = rho * nu, rho ≈ 1
-    # So: dP/dx_theoretical = -u_max * mu / (4*a^2 / pi^3 * shape_max_unnormalized)  ... but this is complex.
-    # Instead, use dimensional analysis: the shape function gives u = -(dP/dx)*(4a^2/pi^3) * S(y,z) / mu
-    # So dP/dx = -u_max * mu * pi^3 / (4 * a^2 * shape_max_unnormalized)
-    # where shape_max_unnormalized = shape_max from the Fourier series
-    mu = nu  # rho ≈ 1
-    dpdx_analytical = -u_centerline_sim * mu * (np.pi**3) / (16.0 * a**2 * shape_max)
-    
-    dp_error = abs(dpdx_sim - dpdx_analytical) / abs(dpdx_analytical) * 100.0
-    print(f"\n  [Pressure Gradient Check]")
-    print(f"  Simulated dP/dx:  {dpdx_sim:.8f}")
-    print(f"  Analytical dP/dx: {dpdx_analytical:.8f}")
-    print(f"  Pressure Error:   {dp_error:.2f}% (informational)")
-        
+
+    # From the Fourier series: u(y,z) = -(dP/dx) * (16a^2 / (mu * pi^3)) * S(y,z)
+    # The 16 comes from Fourier-expanding (y^2-a^2) in cosines: coefficient = 32a^2/(n^3*pi^3),
+    # and the shape function S absorbs a factor of 2 from the sum convention.
+    u_analytical = (-dpdx_sim) * (16.0 * a**2 / (np.pi**3)) * shape_field / mu
+
+    # Extract just the fluid cells
+    u_sim_fluid = u_slice[1:-1, 1:-1]
+
+    abs_errors = np.abs(u_sim_fluid - u_analytical)
+    rel_errors = abs_errors / u_centerline_sim
+    max_error = np.max(rel_errors) * 100.0
+
+    # L2 error for completeness
+    l2_num = np.sqrt(np.mean((u_sim_fluid - u_analytical)**2))
+    l2_den = np.sqrt(np.mean(u_analytical**2))
+    l2_error = l2_num / l2_den * 100.0
+
+    u_centerline_analytical = np.max(u_analytical)
+    centerline_error = abs(u_centerline_sim - u_centerline_analytical) / u_centerline_analytical * 100.0
+
+    print(f"Simulated  Centerline Velocity: {u_centerline_sim:.6f}")
+    print(f"Analytical Centerline Velocity: {u_centerline_analytical:.6f}")
+    print(f"Centerline Absolute Error: {centerline_error:.3f}%")
+    print(f"Max Profile Error (Linf): {max_error:.3f}%")
+    print(f"L2 Profile Error:         {l2_error:.3f}%")
+    print(f"Measured dP/dx: {dpdx_sim:.8f}")
+
+    if max_error <= 3.0:
+        print("✓ VALIDATION PASSED (<3% Error)")
+    else:
+        print("✗ VALIDATION FAILED (>3% Error)")
+
     return max_error
 
 
@@ -912,39 +903,44 @@ def test_conjugate_slab(device="cuda"):
     T_np = T.numpy()
     T_sim = T_np[:, 1, 1]  # 1D profile along x
 
-    # We use shape-only validation to avoid 1-cell offset errors from boundary discretization
-    # The actual extrema simulated determine the exact bounds of the profile inside the lattice
-    T_hot_sim = np.max(T_sim)
-    T_cold_sim = np.min(T_sim)
-    
+    # Absolute validation using prescribed boundary temperatures (not simulated extremes)
     L_s = float(x_interface)
     L_f = float(nx - x_interface)
-    # The interface temperature based on the *actual* hot and cold boundaries
-    T_interface = (alpha_s * T_hot_sim * L_f + alpha_f * T_cold_sim * L_s) / (alpha_s * L_f + alpha_f * L_s)
+
+    # Analytical interface temperature from heat flux continuity: alpha_s * dT_s/dx = alpha_f * dT_f/dx
+    T_interface_ana = (alpha_s * T_hot * L_f + alpha_f * T_cold * L_s) / (alpha_s * L_f + alpha_f * L_s)
 
     T_analytical = np.zeros(nx)
     for i in range(nx):
         if i < x_interface:
-            T_analytical[i] = T_hot_sim + (T_interface - T_hot_sim) * (float(i) / L_s)
+            T_analytical[i] = T_hot + (T_interface_ana - T_hot) * (float(i) / L_s)
         else:
-            T_analytical[i] = T_interface + (T_cold_sim - T_interface) * (float(i - x_interface) / L_f)
+            T_analytical[i] = T_interface_ana + (T_cold - T_interface_ana) * (float(i - x_interface) / L_f)
 
     interior = slice(2, nx - 2)
-    # Normalize both to [0, 1] effectively using actual max delta
-    delta_T = T_hot_sim - T_cold_sim
+    delta_T = T_hot - T_cold
     abs_errors = np.abs(T_sim[interior] - T_analytical[interior])
     rel_errors = abs_errors / delta_T
     max_error = np.max(rel_errors) * 100.0
 
+    # L2 error
+    l2_num = np.sqrt(np.mean((T_sim[interior] - T_analytical[interior])**2))
+    l2_error = l2_num / delta_T * 100.0
+
+    T_interface_sim = T_sim[x_interface]
+    interface_error = abs(T_interface_sim - T_interface_ana) / delta_T * 100.0
+
     print(f"α_solid: {alpha_s:.4f}, α_fluid: {alpha_f:.4f}")
-    print(f"Analytical T_interface (adj): {T_interface:.4f}")
-    print(f"Simulated T_interface:        {T_sim[x_interface]:.4f}")
-    print(f"Max Shape Error: {max_error:.3f}%")
+    print(f"Analytical T_interface: {T_interface_ana:.4f}")
+    print(f"Simulated T_interface:  {T_interface_sim:.4f}")
+    print(f"Interface Error:        {interface_error:.3f}%")
+    print(f"Max Profile Error (Linf): {max_error:.3f}%")
+    print(f"L2 Profile Error:         {l2_error:.3f}%")
 
     if max_error <= 3.0:
-        print("✓ SHAPE VALIDATION PASSED (<3% Error)")
+        print("✓ VALIDATION PASSED (<3% Error)")
     else:
-        print("✗ SHAPE VALIDATION FAILED (>3% Error)")
+        print("✗ VALIDATION FAILED (>3% Error)")
 
     return max_error
 
@@ -959,7 +955,7 @@ def test_volumetric_heat_source(device="cuda"):
     print("Running Volumetric Heat Source (Poisson) Test")
     print("=" * 50)
 
-    nx, ny, nz = 52, 3, 3  # 50 interior solid cells + 2 boundary
+    nx, ny, nz = 52, 17, 17  # 50 interior solid cells + 2 boundary; ny,nz >= 17 avoids D3Q19 wall artifacts
     tau_solid = 0.8
     c_s_sq = 1.0 / 3.0
     alpha = c_s_sq * (tau_solid - 0.5)  # 0.1
@@ -1010,34 +1006,45 @@ def test_volumetric_heat_source(device="cuda"):
     print(" Done.")
 
     T_np = T.numpy()
-    T_sim = T_np[:, 1, 1]
+    T_sim = T_np[:, ny // 2, nz // 2]
 
-    # Use shape validation: the simulated max determines the normalization factor.
-    # The source term magnitude is ambiguous due to the (1-omega/2) prefactor and lattice BC offsets,
-    # but the Poisson equation STRICTLY demands a parabolic shape.
-    T_max_sim = np.max(T_sim)
-    
-    L_eff = float(nx - 1)
+    # Absolute validation: compute analytical T_max from physical parameters.
+    # The collision kernel applies source as: w_i * (1 - 0.5*omega) * Q_power
+    # After Chapman-Enskog, the effective macroscopic source is: Q_eff = (1 - 0.5*omega) * Q_power
+    # Steady-state Poisson equation: d²T/dx² = -Q_eff / alpha
+    # With T(0) = T(L) = 0: T(x) = (Q_eff / (2*alpha)) * x * (L - x)
+    # T_max at x = L/2: T_max = Q_eff * L^2 / (8 * alpha)
+    omega = 1.0 / tau_solid
+    Q_eff = (1.0 - 0.5 * omega) * Q_power
+    L_eff = float(nx - 1)  # Effective length between Dirichlet boundaries
+    T_max_analytical = Q_eff * L_eff**2 / (8.0 * alpha)
+
     x_coords = np.arange(nx, dtype=float)
-    # Standard normalized parabola: P(x) = x*(L-x) / (L/2)^2 => max is 1.0 at x=L/2
-    parabola_shape = x_coords * (L_eff - x_coords) / ((L_eff / 2.0)**2)
-    
-    T_analytical = T_max_sim * parabola_shape
-    T_analytical[0] = T_sim[0]
-    T_analytical[-1] = T_sim[-1]
+    T_analytical = (Q_eff / (2.0 * alpha)) * x_coords * (L_eff - x_coords)
+
+    T_max_sim = np.max(T_sim)
 
     interior = slice(2, nx - 2)
     abs_errors = np.abs(T_sim[interior] - T_analytical[interior])
-    rel_errors = abs_errors / T_max_sim
+    rel_errors = abs_errors / T_max_analytical
     max_error = np.max(rel_errors) * 100.0
 
+    # L2 error
+    l2_num = np.sqrt(np.mean((T_sim[interior] - T_analytical[interior])**2))
+    l2_error = l2_num / T_max_analytical * 100.0
+
+    peak_error = abs(T_max_sim - T_max_analytical) / T_max_analytical * 100.0
+
+    print(f"Analytical T_max: {T_max_analytical:.6f}")
     print(f"Simulated T_max:  {T_max_sim:.6f}")
-    print(f"Max Shape Error: {max_error:.3f}%")
+    print(f"Peak Absolute Error:      {peak_error:.3f}%")
+    print(f"Max Profile Error (Linf): {max_error:.3f}%")
+    print(f"L2 Profile Error:         {l2_error:.3f}%")
 
     if max_error <= 3.0:
-        print("✓ SHAPE VALIDATION PASSED (<3% Error)")
+        print("✓ VALIDATION PASSED (<3% Error)")
     else:
-        print("✗ SHAPE VALIDATION FAILED (>3% Error)")
+        print("✗ VALIDATION FAILED (>3% Error)")
 
     return max_error
 
