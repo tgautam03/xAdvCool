@@ -1,4 +1,4 @@
-"""Trivial baselines: MeanBaseline and MLPBaseline."""
+"""Trivial baseline: MLPBaseline."""
 
 from __future__ import annotations
 
@@ -9,23 +9,8 @@ from .base import BaseModel, register_model
 
 
 @register_model
-class MeanBaseline(BaseModel):
-    """Returns a learned constant field (initialized to zero, trained to match mean)."""
-
-    name = "mean_baseline"
-
-    def __init__(self, out_channels: int = 5, grid_shape: tuple = (128, 128, 32), **kwargs):
-        super().__init__()
-        self.mean_field = nn.Parameter(torch.zeros(1, out_channels, *grid_shape))
-
-    def forward(self, input_dict: dict) -> dict:
-        B = input_dict["fields"].shape[0]
-        return {"fields": self.mean_field.expand(B, -1, -1, -1, -1)}
-
-
-@register_model
 class MLPBaseline(BaseModel):
-    """Global-average-pool input fields + scalar params → MLP → output.
+    """Global-average-pool input fields + scalar params -> MLP -> output.
 
     For field prediction: broadcasts MLP output back to volume.
     For scalar prediction: MLP directly outputs scalars.

@@ -23,10 +23,10 @@ import numpy as np
 import pandas as pd
 from scipy.stats import qmc
 
-from geometry import (generate_mask, CORE_NX, CORE_NY, CORE_NZ,
-                      BC_SOLID, BC_INLET, BC_OUTLET,
-                      HEAT_SOURCE_REGISTRY, HEAT_SOURCE_NAMES)
-from simulation import run_simulation
+from src.geometry import (generate_mask, CORE_NX, CORE_NY, CORE_NZ,
+                          BC_SOLID, BC_INLET, BC_OUTLET,
+                          HEAT_SOURCE_REGISTRY, HEAT_SOURCE_NAMES)
+from src.simulation import run_simulation
 
 
 def _get_hardware_info(device):

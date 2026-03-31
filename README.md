@@ -1,74 +1,143 @@
-# xAdvCool: Advanced 3D Conjugate Heat Transfer LBM Solver (NeurIPS 2026)
+# xAdvCool: 3D Conjugate Heat Transfer Dataset & Benchmark
 
-**xAdvCool** is a high-performance, GPU-accelerated 3D Lattice Boltzmann Method (LBM) solver designed for simulating **Conjugate Heat Transfer (CHT)** in microchannel cooling systems. Built on NVIDIA Warp, it enables rapid simulation of complex fluid-thermal interactions in intricate 3D geometries, specifically tailored for generating large-scale datasets for machine learning benchmarks like NeurIPS.
+A GPU-accelerated Lattice Boltzmann solver for generating large-scale 3D Conjugate Heat Transfer (CHT) datasets, with an ML benchmark suite for surrogate modeling of cold plate heat sinks.
 
----
-
-## 🚀 Key Features
-
-### 1. High-Performance GPU Engine
-*   **NVIDIA Warp Backend:** Utilizes JIT-compiled CUDA kernels for massive parallelism on modern GPUs.
-*   **D3Q19 Lattice:** Employs the standard 19-velocity 3D lattice for an optimal balance of accuracy and computational efficiency.
-*   **Scalable Domains:** Capable of simulating millions of voxels with low memory overhead.
-
-### 2. Advanced Collision Physics
-*   **Standard BGK:** Includes the classic single-relaxation-time (BGK) operator for laminar, high-viscosity regimes.
-*   **CHT-Coupled Thermal Solver:** Simulates heat conduction in solids and convection in fluids with direct thermal coupling at the interface.
-
-### 3. Mathematical 3D Geometry Engine
-Replaces traditional CAD with implicitly defined Triply Periodic Minimal Surfaces (TPMS) and structured pins:
-*   **Gyroid:** $\sin(x)\cos(y) + \sin(y)\cos(z) + \sin(z)\cos(x) = C$
-*   **Schwarz Primitive:** $\cos(x) + \cos(y) + \cos(z) = C$
-*   **Schwarz Diamond:** $\sin(x)\sin(y)\sin(z) + ... = C$
-*   **Pin-Fin Staggered:** Classic high-efficiency cooling pillars.
-*   **Straight Channels:** Baseline laminar microchannels.
-
-### 4. Realistic Thermal boundary Conditions
-*   **Processor Heat Maps:** Simulates realistic heat generation profiles (e.g., Dual-Core + L3 Cache layouts).
-*   **Conjugate Coupling:** Handles different thermal relaxation times for fluid (water) and solid (Silicon) domains.
+Built on NVIDIA Warp. Targeting **NeurIPS 2026 Datasets & Benchmarks**.
 
 ---
 
-## 📊 Performance Metrics
+## Dataset
 
-The solver automatically calculates and tracks key hydraulic and thermal engineering parameters:
-*   **Reynolds Number (Re):** Calculated dynamically using porosity and hydraulic diameter.
-*   **Flow Rate (Q) & Pressure Drop (dP):** For hydraulic resistance analysis.
-*   **Permeability (k):** Quantitative measure of flow conductance.
-*   **Maximum Temperature (MaxT) & Average Temperature:** For thermal effectiveness.
-*   **Pumping Power:** Energy required to drive the flow.
+Over 1,000 steady-state simulations of water cooling through copper cold plates:
+- **5 geometry types:** Straight Channels, Pin-Fin Staggered, Gyroid TPMS, Schwarz P TPMS, Schwarz D TPMS
+- **10 heat source patterns:** uniform, dual_core, quad_core, gpu_die, chiplet, igbt_half_bridge, soc_heterogeneous, gaussian_hotspots, hotspot_on_background, peripheral_ring
+- **Per sample:** geometry mask, heat source, velocity (3D vector), pressure, temperature fields on a 148x128x32 lattice
+- **Storage:** HDF5 (fields) + Parquet (scalar metadata)
 
 ---
 
-## 🛠️ Getting Started
+## Project Structure
+
+```
+xAdvCool/
+├── src/                        # Core physics & geometry
+│   ├── fluid_engine3d.py       #   D3Q19 fluid solver (Warp/CUDA)
+│   ├── thermal_engine3d.py     #   Conjugate heat transfer solver (Warp/CUDA)
+│   ├── geometry.py             #   Geometry generation (TPMS, pins, channels)
+│   └── simulation.py           #   LBM simulation runner
+├── generate_dataset.py         # Dataset generation pipeline
+├── generate_croissant.py       # Croissant metadata for HuggingFace/NeurIPS
+├── validate_analytical.py      # Analytical validation suite (10 test cases)
+├── test_validation.py          # Pytest wrapper for validation
+├── analyze_dataset.py          # Dataset statistics & publication figures
+├── analyze_ml_readiness.py     # ML readiness analysis (learnability, diversity)
+├── dataset_viewer.py           # Interactive 3D field viewer (PyVista)
+├── benchmark/                  # ML benchmark suite
+│   ├── train.py                #   Training entry point
+│   ├── evaluate.py             #   Evaluation entry point
+│   ├── data/                   #   Dataset, splits, normalization
+│   ├── models/                 #   7 models (see below)
+│   ├── metrics/                #   Field, scalar, and physics metrics
+│   └── configs/                #   YAML configs per task/model
+└── dataset/                    # Generated data (not in git)
+    ├── data.h5
+    └── metadata.parquet
+```
+
+---
+
+## Usage
 
 ### Prerequisites
-*   Python 3.10+
-*   NVIDIA GPU (with CUDA support)
+- Python 3.10+
+- NVIDIA GPU with CUDA support
 
 ### Installation
-1. Create a virtual environment and install dependencies:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install warp-lang numpy pyvista scipy tqdm
+pip install warp-lang numpy scipy tqdm h5py pandas pyvista scikit-learn
+pip install torch torchvision  # for benchmark
 ```
 
-### Usage
-1.  **Generate Geometry:** Run and interact with the 3D designer.
-    ```bash
-    python geometry.py
-    ```
-2.  **Run Simulation:** Execute the multi-physics solver.
-    ```bash
-    python simulation.py
-    ```
-3.  **Visualize Results:** Inspect the 3D temperature and velocity fields.
-    ```bash
-    python visualization.py
-    ```
+### 1. Validate the solver analytically
+```bash
+python validate_analytical.py          # run all 10 test cases
+python -m pytest test_validation.py -v # or via pytest
+```
+
+### 2. Generate the dataset
+```bash
+python generate_dataset.py --samples-per-design 200 --device cuda
+```
+Supports resume: re-run the same command to continue from where it stopped. Previously failed simulations are tracked in `dataset/failed_samples.json` and skipped.
+
+### 3. View dataset samples interactively
+```bash
+python dataset_viewer.py                        # default: dataset/data.h5
+python dataset_viewer.py --data path/to/data.h5 --sample 5
+```
+
+### 4. Analyze the dataset
+```bash
+python analyze_dataset.py       # physical validation plots & stats
+python analyze_ml_readiness.py  # ML readiness evaluation
+```
+
+### 5. Generate Croissant metadata
+```bash
+python generate_croissant.py    # writes croissant.json with checksums
+```
+
+### 6. Train & evaluate ML models
+```bash
+# Quick smoke test with trivial baselines
+python -m benchmark.train --config benchmark/configs/task_a_trivial.yaml
+
+# Train a real model
+python -m benchmark.train --config benchmark/configs/task_a_unet3d.yaml
+
+# Prototype with fewer samples/epochs
+python -m benchmark.train --config benchmark/configs/task_a_unet3d.yaml \
+    --override training.epochs=5 data.max_samples=100
+
+# Evaluate
+python -m benchmark.evaluate --config benchmark/configs/task_a_unet3d.yaml \
+    --checkpoint results/task_a_unet3d/best_model.pt
+```
 
 ---
 
-## 🎯 Target Use Case: NeurIPS Benchmarks
-The codebase is structured to be the backbone of a **NeurIPS Datasets and Benchmarks** submission. By leveraging the fast TPMS generation and stable KBC solver, researchers can generate tens of thousands of unique 3D CHT samples to train next-generation Surrogate Models such as FNOs (Fourier Neural Operators) and GNNs (Graph Neural Networks).
+## Benchmark Tasks
+
+| Task | Description | Split |
+|------|-------------|-------|
+| **A** | Full-input field prediction (mask + heat source + scalars -> fields) | 70/15/15 stratified |
+| **B** | Geometry-only prediction (mask -> fields, uniform heat source subset) | 70/15/15 stratified |
+| **C** | OOD generalization (leave-one-geometry-out) | 4 train / 1 held-out |
+
+## Benchmark Models
+
+| Model | Scalar injection | Params |
+|-------|-----------------|--------|
+| MLPBaseline | Concat | small |
+| 3D U-Net | FiLM conditioning | ~22.7M |
+| FNO-3D | Broadcast-concat | ~18.9M |
+| DeepONet | Branch-trunk concat | ~953K |
+| ViT-3D | Condition token | ~7.5M |
+| MeshGraphNet | Node broadcast | ~745K |
+
+---
+
+## Physics Engine
+
+- **Fluid:** D3Q19 lattice, BGK collision, bounce-back boundaries
+- **Thermal:** Conjugate heat transfer with separate fluid/solid relaxation times
+- **Coolant:** Water (Pr=7.0) through copper (k_ratio=628.0)
+- **Convergence:** Monitored via kinetic energy and temperature residuals
+
+---
+
+## License
+
+CC-BY-4.0

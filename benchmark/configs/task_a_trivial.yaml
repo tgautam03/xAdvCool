@@ -1,4 +1,4 @@
-# Task A: Full-input field prediction with MLP baseline
+# Task A: Full-input field prediction with MLPBaseline
 task: field_prediction
 model: mlp_baseline
 
