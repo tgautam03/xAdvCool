@@ -27,8 +27,7 @@ xAdvCool/
 │   └── simulation.py           #   LBM simulation runner
 ├── generate_dataset.py         # Dataset generation pipeline
 ├── generate_croissant.py       # Croissant metadata for HuggingFace/NeurIPS
-├── validate_analytical.py      # Analytical validation suite (10 test cases)
-├── test_validation.py          # Pytest wrapper for validation
+├── validate_analytical.py      # Analytical validation suite (10 test cases, pytest-compatible)
 ├── analyze_dataset.py          # Dataset statistics & publication figures
 ├── analyze_ml_readiness.py     # ML readiness analysis (learnability, diversity)
 ├── dataset_viewer.py           # Interactive 3D field viewer (PyVista)
@@ -62,8 +61,8 @@ pip install torch torchvision  # for benchmark
 
 ### 1. Validate the solver analytically
 ```bash
-python validate_analytical.py          # run all 10 test cases
-python -m pytest test_validation.py -v # or via pytest
+python validate_analytical.py              # run all 10 test cases directly
+python -m pytest validate_analytical.py -v # or via pytest
 ```
 
 ### 2. Generate the dataset

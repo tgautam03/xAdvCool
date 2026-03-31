@@ -1,7 +1,14 @@
+"""
+Analytical validation suite for xAdvCool LBM solvers.
+
+Run directly:  python validate_analytical.py
+Run via pytest: python -m pytest validate_analytical.py -v
+"""
 import warp as wp
 import numpy as np
 from scipy.special import erfc
 import sys
+import pytest
 
 # Import core LBM kernels from xAdvCool
 from src.fluid_engine3d import (BC_SOLID, BC_FLUID, BC_INLET, BC_OUTLET, 
@@ -22,7 +29,7 @@ def dirichlet_thermal_bc_kernel(g: wp.array4d(dtype=float), # type: ignore
         for i in range(19):
             g[i, x_plane, y, z] = W_CONST[i] * T_val
 
-def test_1d_semi_infinite_conduction(device="cuda"):
+def run_1d_semi_infinite_conduction(device="cuda"):
     """
     Validates the thermal TLBM against the exact analytical solution for 1D Transient Heat Conduction 
     in a semi-infinite solid with a step change in surface temperature.
@@ -106,7 +113,7 @@ def test_1d_semi_infinite_conduction(device="cuda"):
     return max_error
 
 
-def test_3d_rectangular_poiseuille(device="cuda"):
+def run_3d_rectangular_poiseuille(device="cuda"):
     """
     Validates the fluid TLBM against the exact analytical solution for fully developed Poiseuille flow
     in a rectangular duct (width 2a, height 2b) using purely stationary bounce-back walls.
@@ -265,7 +272,7 @@ def periodic_streaming_kernel(f_post_collision: wp.array4d(dtype=float), # type:
         
         f_streamed[i, x, y, z] = f_post_collision[i, src_x, src_y, src_z]
 
-def test_taylor_green_vortex(device="cuda"):
+def run_taylor_green_vortex(device="cuda"):
     """
     Validates the pure fluid kinematic viscosity by simulating the 2D Taylor-Green Vortex decay 
     in a 3D periodic domain. The kinetic energy should decay exactly exponentially.
@@ -412,7 +419,7 @@ def periodic_streaming_with_solids_kernel(f_post_collision: wp.array4d(dtype=flo
         else:
             f_streamed[i, x, y, z] = f_post_collision[i, src_x, src_y, src_z]
 
-def test_kuwabara_pin_fin(device="cuda"):
+def run_kuwabara_pin_fin(device="cuda"):
     print("\n" + "="*50)
     print("Running Kuwabara Periodic Pin-Fin Drag Test")
     print("="*50)
@@ -530,7 +537,7 @@ def couette_streaming_kernel(f_post_collision: wp.array4d(dtype=float), # type: 
             else:
                 f_streamed[i, x, y, z] = f_post_collision[i, src_x, src_y, src_z]
 
-def test_couette_flow(device="cuda"):
+def run_couette_flow(device="cuda"):
     """
     Validates the fluid TLBM boundary conditions by simulating a shear-driven Couette flow.
     The top boundary moves tangentially, driving the fluid to a linear analytical velocity profile.
@@ -613,7 +620,7 @@ def periodic_thermal_streaming_kernel(g_post_collision: wp.array4d(dtype=float),
         
         g_streamed[i, x, y, z] = g_post_collision[i, src_x, src_y, src_z]
 
-def test_advection_diffusion_gaussian(device="cuda"):
+def run_advection_diffusion_gaussian(device="cuda"):
     print("\n" + "="*50)
     print("Running Advection-Diffusion Gaussian Hot Spot Test")
     print("="*50)
@@ -701,7 +708,7 @@ def test_advection_diffusion_gaussian(device="cuda"):
     return max_error
 
 
-def test_taylor_green_convergence(device="cuda"):
+def run_taylor_green_convergence(device="cuda"):
     """
     Grid Convergence Study using the Taylor-Green Vortex.
     Runs the TGV at multiple spatial resolutions and measures the L2 velocity error
@@ -821,7 +828,7 @@ def test_taylor_green_convergence(device="cuda"):
     return avg_order
 
 
-def test_conjugate_slab(device="cuda"):
+def run_conjugate_slab(device="cuda"):
     """
     Validates Conjugate Heat Transfer (CHT) at a fluid-solid interface.
     A 1D domain is split: left half = solid (high α), right half = fluid (low α).
@@ -945,7 +952,7 @@ def test_conjugate_slab(device="cuda"):
     return max_error
 
 
-def test_volumetric_heat_source(device="cuda"):
+def run_volumetric_heat_source(device="cuda"):
     """
     Validates the heat source term in thermal_bgk_collision_kernel.
     A 1D solid rod with uniform internal heating Q and fixed T=0 at both ends
@@ -1049,7 +1056,7 @@ def test_volumetric_heat_source(device="cuda"):
     return max_error
 
 
-def test_mach_sensitivity(device="cuda"):
+def run_mach_sensitivity(device="cuda"):
     """
     Characterizes the solver's compressibility error envelope by running the Taylor-Green
     Vortex at multiple Mach numbers and measuring the L2 velocity error at each.
@@ -1152,7 +1159,7 @@ def test_mach_sensitivity(device="cuda"):
     return max_error_pct
 
 
-def test_poiseuille_convergence(device="cuda"):
+def run_poiseuille_convergence(device="cuda"):
     """
     Grid Convergence Study using Poiseuille Flow in a 2D channel.
     Runs a steady-state flow simulation at multiple channel widths (resolutions)
@@ -1275,16 +1282,77 @@ def test_poiseuille_convergence(device="cuda"):
     return avg_p
 
 
+# ---------------------------------------------------------------------------
+# Pytest integration
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session", autouse=True)
+def init_warp():
+    wp.init()
+
+
+class TestThermalEngine:
+    """Tests for the thermal LBM solver."""
+
+    def test_semi_infinite_conduction(self):
+        error = run_1d_semi_infinite_conduction()
+        assert error <= 3.0, f"Semi-infinite conduction error {error:.3f}% exceeds 3% threshold"
+
+    def test_advection_diffusion_gaussian(self):
+        error = run_advection_diffusion_gaussian()
+        assert error <= 3.0, f"Advection-diffusion error {error:.3f}% exceeds 3% threshold"
+
+    def test_conjugate_slab(self):
+        error = run_conjugate_slab()
+        assert error <= 3.0, f"CHT conjugate slab shape error {error:.3f}% exceeds 3% threshold"
+
+    def test_volumetric_heat_source(self):
+        error = run_volumetric_heat_source()
+        assert error <= 3.0, f"Heat source Poisson shape error {error:.3f}% exceeds 3% threshold"
+
+
+class TestFluidEngine:
+    """Tests for the fluid LBM solver."""
+
+    def test_rectangular_poiseuille(self):
+        error = run_3d_rectangular_poiseuille()
+        assert error <= 3.0, f"Poiseuille shape error {error:.3f}% exceeds 3% threshold"
+
+    def test_taylor_green_vortex(self):
+        error = run_taylor_green_vortex()
+        assert error <= 3.0, f"Taylor-Green vortex error {error:.3f}% exceeds 3% threshold"
+
+    def test_kuwabara_pin_fin(self):
+        error = run_kuwabara_pin_fin()
+        assert error <= 5.0, f"Kuwabara drag error {error:.3f}% exceeds 5% threshold"
+
+    def test_couette_flow(self):
+        error = run_couette_flow()
+        assert error <= 3.0, f"Couette flow error {error:.3f}% exceeds 3% threshold"
+
+
+class TestConvergenceAndSensitivity:
+    """Grid convergence and operating envelope characterization."""
+
+    def test_grid_convergence(self):
+        order = run_poiseuille_convergence()
+        assert order >= 1.8, f"Convergence order {order:.3f} is below 1.8 (expected ~2.0)"
+
+    def test_mach_sensitivity(self):
+        error = run_mach_sensitivity()
+        assert error <= 5.0, f"Mach sensitivity error {error:.3f}% exceeds 5% at high Ma"
+
+
 if __name__ == "__main__":
     wp.init()
-    test_1d_semi_infinite_conduction()
-    test_3d_rectangular_poiseuille()
-    test_taylor_green_vortex()
-    test_kuwabara_pin_fin()
-    test_couette_flow()
-    test_advection_diffusion_gaussian()
-    test_poiseuille_convergence()
-    test_conjugate_slab()
-    test_volumetric_heat_source()
-    test_mach_sensitivity()
+    run_1d_semi_infinite_conduction()
+    run_3d_rectangular_poiseuille()
+    run_taylor_green_vortex()
+    run_kuwabara_pin_fin()
+    run_couette_flow()
+    run_advection_diffusion_gaussian()
+    run_poiseuille_convergence()
+    run_conjugate_slab()
+    run_volumetric_heat_source()
+    run_mach_sensitivity()
 
