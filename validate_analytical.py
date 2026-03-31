@@ -12,7 +12,7 @@ from src.thermal_engine3d import (compute_thermal_equilibrium_kernel, thermal_bg
                                 thermal_streaming_kernel, compute_thermal_macroscopic_kernel)
 
 @wp.kernel
-def dirichlet_thermal_bc_kernel(g: wp.array4d(dtype=float),
+def dirichlet_thermal_bc_kernel(g: wp.array4d(dtype=float), # type: ignore
                                 T_val: float,
                                 x_plane: int,
                                 ny: int, nz: int):
@@ -246,8 +246,8 @@ def test_3d_rectangular_poiseuille(device="cuda"):
 
 
 @wp.kernel
-def periodic_streaming_kernel(f_post_collision: wp.array4d(dtype=float),
-                              f_streamed: wp.array4d(dtype=float),
+def periodic_streaming_kernel(f_post_collision: wp.array4d(dtype=float), # type: ignore
+                              f_streamed: wp.array4d(dtype=float), # type: ignore
                               nx: int, ny: int, nz: int):
     x, y, z = wp.tid()
     for i in range(19):
@@ -368,10 +368,10 @@ def test_taylor_green_vortex(device="cuda"):
 
 
 @wp.kernel
-def forced_bgk_collision_kernel(f_old: wp.array4d(dtype=float),
-                                f_eq: wp.array4d(dtype=float),
-                                f_new: wp.array4d(dtype=float),
-                                mask: wp.array3d(dtype=int),
+def forced_bgk_collision_kernel(f_old: wp.array4d(dtype=float), # type: ignore
+                                f_eq: wp.array4d(dtype=float), # type: ignore
+                                f_new: wp.array4d(dtype=float), # type: ignore
+                                mask: wp.array3d(dtype=int), # type: ignore
                                 tau: float,
                                 force_x: float):
     x, y, z = wp.tid()
@@ -388,9 +388,9 @@ def forced_bgk_collision_kernel(f_old: wp.array4d(dtype=float),
             f_new[i, x, y, z] = f_old[i, x, y, z]
 
 @wp.kernel
-def periodic_streaming_with_solids_kernel(f_post_collision: wp.array4d(dtype=float),
-                                          f_streamed: wp.array4d(dtype=float),
-                                          mask: wp.array3d(dtype=int),
+def periodic_streaming_with_solids_kernel(f_post_collision: wp.array4d(dtype=float), # type: ignore
+                                          f_streamed: wp.array4d(dtype=float), # type: ignore
+                                          mask: wp.array3d(dtype=int), # type: ignore
                                           nx: int, ny: int, nz: int):
     x, y, z = wp.tid()
     m = mask[x, y, z]
@@ -493,9 +493,9 @@ def test_kuwabara_pin_fin(device="cuda"):
 
 
 @wp.kernel
-def couette_streaming_kernel(f_post_collision: wp.array4d(dtype=float),
-                             f_streamed: wp.array4d(dtype=float),
-                             mask: wp.array3d(dtype=int),
+def couette_streaming_kernel(f_post_collision: wp.array4d(dtype=float), # type: ignore
+                             f_streamed: wp.array4d(dtype=float), # type: ignore
+                             mask: wp.array3d(dtype=int), # type: ignore
                              u_wall_x: float,
                              nx: int, ny: int, nz: int):
     x, y, z = wp.tid()
@@ -598,8 +598,8 @@ def test_couette_flow(device="cuda"):
 
 
 @wp.kernel
-def periodic_thermal_streaming_kernel(g_post_collision: wp.array4d(dtype=float),
-                                      g_streamed: wp.array4d(dtype=float),
+def periodic_thermal_streaming_kernel(g_post_collision: wp.array4d(dtype=float), # type: ignore
+                                      g_streamed: wp.array4d(dtype=float), # type: ignore
                                       nx: int, ny: int, nz: int):
     x, y, z = wp.tid()
     for i in range(19):

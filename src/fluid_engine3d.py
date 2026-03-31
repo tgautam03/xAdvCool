@@ -179,10 +179,10 @@ def fused_equilibrium_collision_kernel(
 #################### Streaming Operator: f_streamed ###################
 #######################################################################
 @wp.kernel
-def streaming_kernel(f_post_collision: wp.array4d(dtype=float),
-                     f_streamed: wp.array4d(dtype=float),
-                     domain_mask: wp.array3d(dtype=int),
-                     u_inlet: wp.array(dtype=float),         # Parameter: [ux_inlet]
+def streaming_kernel(f_post_collision: wp.array4d(dtype=float), # type: ignore
+                     f_streamed: wp.array4d(dtype=float), # type: ignore
+                     domain_mask: wp.array3d(dtype=int), # type: ignore
+                     u_inlet: wp.array(dtype=float),         # Parameter: [ux_inlet] # type: ignore
                      rho_outlet: float,
                      nx: int, ny: int, nz: int):
     x, y, z = wp.tid()
@@ -275,10 +275,10 @@ def streaming_kernel(f_post_collision: wp.array4d(dtype=float),
 #################### Compute Stats: MaxV, KE ##########################
 #######################################################################
 @wp.kernel
-def compute_stats_kernel(rho: wp.array3d(dtype=float),        # Input
-                         u: wp.array3d(dtype=wp.vec3f),       # Input
-                         domain_mask: wp.array3d(dtype=int),  # Input
-                         stats: wp.array(dtype=float),        # Output buffer
+def compute_stats_kernel(rho: wp.array3d(dtype=float),        # Input # type: ignore
+                         u: wp.array3d(dtype=wp.vec3f),       # Input # type: ignore
+                         domain_mask: wp.array3d(dtype=int),  # Input # type: ignore
+                         stats: wp.array(dtype=float),        # Output buffer # type: ignore
                          nx: int, ny: int, nz: int):
     # Indices: [max_v, sum_v, sum_ke, count, sum_rho, sum_rho_in, sum_rho_out, sum_ux_out, c_in, c_out, c_outlet_nodes]
     x, y, z = wp.tid()

@@ -47,13 +47,13 @@ def compute_thermal_equilibrium_kernel(rho: wp.array3d(dtype=float),      # Flui
         g_eq[i, x, y, z] = val
 
 @wp.kernel
-def thermal_bgk_collision_kernel(g_old: wp.array4d(dtype=float),            # Input
-                                 g_eq: wp.array4d(dtype=float),             # Input
-                                 g_new: wp.array4d(dtype=float),            # Output
-                                 mask: wp.array3d(dtype=int),               # Domain mask
+def thermal_bgk_collision_kernel(g_old: wp.array4d(dtype=float),            # Input # type: ignore
+                                 g_eq: wp.array4d(dtype=float),             # Input # type: ignore
+                                 g_new: wp.array4d(dtype=float),            # Output # type: ignore
+                                 mask: wp.array3d(dtype=int),               # Domain mask # type: ignore
                                  tau_fluid: float,
                                  tau_solid: float,
-                                 heat_source_mask: wp.array3d(dtype=float), # 1.0 explicitly implies heating
+                                 heat_source_mask: wp.array3d(dtype=float), # 1.0 explicitly implies heating # type: ignore
                                  heat_source_power: float
                                  ):
     x, y, z = wp.tid()
@@ -145,11 +145,11 @@ def fused_thermal_equilibrium_collision_kernel(
         g_new[i, x, y, z] = val
 
 @wp.kernel
-def thermal_streaming_kernel(g_post_collision: wp.array4d(dtype=float), # Input
-                             g_streamed: wp.array4d(dtype=float),       # Output
-                             mask: wp.array3d(dtype=int),
-                             T_inlet: float,
-                             nx: int, ny: int, nz: int
+def thermal_streaming_kernel(g_post_collision: wp.array4d(dtype=float), # Input # type: ignore
+                             g_streamed: wp.array4d(dtype=float),       # Output # type: ignore
+                             mask: wp.array3d(dtype=int),               # Domain mask # type: ignore
+                             T_inlet: float,                            # Inlet temperature # type: ignore
+                             nx: int, ny: int, nz: int                  # Grid dimensions # type: ignore
                              ):
     x, y, z = wp.tid()
     
@@ -212,8 +212,8 @@ def thermal_streaming_kernel(g_post_collision: wp.array4d(dtype=float), # Input
 
 
 @wp.kernel
-def compute_thermal_macroscopic_kernel(g: wp.array4d(dtype=float),       # Input
-                                       T: wp.array3d(dtype=float)        # Output
+def compute_thermal_macroscopic_kernel(g: wp.array4d(dtype=float),       # Input # type: ignore
+                                       T: wp.array3d(dtype=float)        # Output # type: ignore
                                        ):
     x, y, z = wp.tid()
     
@@ -224,8 +224,8 @@ def compute_thermal_macroscopic_kernel(g: wp.array4d(dtype=float),       # Input
     T[x, y, z] = sum_g
 
 @wp.kernel
-def compute_thermal_stats_kernel(T: wp.array3d(dtype=float),        # Input
-                                 stats: wp.array(dtype=float)       # Output: [max_t, sum_t, count]
+def compute_thermal_stats_kernel(T: wp.array3d(dtype=float),        # Input # type: ignore
+                                 stats: wp.array(dtype=float)       # Output: [max_t, sum_t, count] # type: ignore
                                  ):
     x, y, z = wp.tid()
     

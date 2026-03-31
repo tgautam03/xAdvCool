@@ -111,6 +111,231 @@ def generate_processor_heatmap(nx, ny):
     return generate_dual_core_heatmap(nx, ny)
 
 
+def generate_quad_core_heatmap(nx, ny):
+    """2x2 quad-core CPU with shared L3 cache cross and background leakage."""
+    import scipy.ndimage as ndimage
+
+    hm = np.full((nx, ny), 0.08, dtype=np.float32)
+
+    # Four cores in a 2x2 grid
+    cores = [
+        (0.15, 0.55, 0.45, 0.85),   # top-right
+        (0.15, 0.15, 0.45, 0.45),   # top-left
+        (0.55, 0.55, 0.85, 0.85),   # bottom-right
+        (0.55, 0.15, 0.85, 0.45),   # bottom-left
+    ]
+    for x0f, y0f, x1f, y1f in cores:
+        hm[int(nx*x0f):int(nx*x1f), int(ny*y0f):int(ny*y1f)] = 1.0
+
+    # L3 cache cross between cores
+    hm[int(nx*0.45):int(nx*0.55), int(ny*0.10):int(ny*0.90)] = 0.45
+    hm[int(nx*0.10):int(nx*0.90), int(ny*0.45):int(ny*0.55)] = 0.45
+
+    hm = ndimage.gaussian_filter(hm, sigma=nx / 80.0)
+    if hm.max() > 0:
+        hm /= hm.max()
+    return hm
+
+
+def generate_gpu_die_heatmap(nx, ny):
+    """GPU die: large shader array block with HBM controller strips on two edges."""
+    import scipy.ndimage as ndimage
+
+    hm = np.full((nx, ny), 0.05, dtype=np.float32)
+
+    # Shader / compute array — large central block
+    hm[int(nx*0.15):int(nx*0.85), int(ny*0.15):int(ny*0.85)] = 0.75
+
+    # HBM memory controller strips on left and right edges
+    hm[int(nx*0.10):int(nx*0.90), int(ny*0.02):int(ny*0.12)] = 1.0
+    hm[int(nx*0.10):int(nx*0.90), int(ny*0.88):int(ny*0.98)] = 1.0
+
+    # Raster engine hotspots (small intense regions inside shader block)
+    for cx_f in [0.30, 0.50, 0.70]:
+        cx, cy = int(nx * cx_f), int(ny * 0.50)
+        r = int(min(nx, ny) * 0.04)
+        xx, yy = np.ogrid[:nx, :ny]
+        dist2 = (xx - cx)**2 + (yy - cy)**2
+        hm[dist2 < r**2] = 1.0
+
+    hm = ndimage.gaussian_filter(hm, sigma=nx / 60.0)
+    if hm.max() > 0:
+        hm /= hm.max()
+    return hm
+
+
+def generate_chiplet_heatmap(nx, ny):
+    """Multi-chiplet package: 4-6 discrete compute dies on a substrate with an I/O die."""
+    import scipy.ndimage as ndimage
+
+    hm = np.full((nx, ny), 0.03, dtype=np.float32)
+
+    # Compute chiplets — 2x3 grid of small high-power dies
+    chiplet_w, chiplet_h = 0.18, 0.22
+    positions = [
+        (0.12, 0.08), (0.12, 0.40), (0.12, 0.72),
+        (0.58, 0.08), (0.58, 0.40), (0.58, 0.72),
+    ]
+    for x0f, y0f in positions:
+        hm[int(nx*x0f):int(nx*(x0f+chiplet_w)),
+           int(ny*y0f):int(ny*(y0f+chiplet_h))] = 1.0
+
+    # I/O die — lower-power strip along center
+    hm[int(nx*0.38):int(nx*0.52), int(ny*0.10):int(ny*0.90)] = 0.35
+
+    hm = ndimage.gaussian_filter(hm, sigma=nx / 70.0)
+    if hm.max() > 0:
+        hm /= hm.max()
+    return hm
+
+
+def generate_igbt_heatmap(nx, ny):
+    """IGBT half-bridge module: 3 IGBT dies interleaved with 3 diode dies in a row."""
+    import scipy.ndimage as ndimage
+
+    hm = np.full((nx, ny), 0.02, dtype=np.float32)
+
+    # 3 IGBT + 3 diode pairs arranged linearly along Y
+    die_h = 0.10
+    igbt_w = 0.50
+    diode_w = 0.25
+    y_positions = [0.05, 0.20, 0.38, 0.55, 0.72, 0.88]
+
+    for i, y0f in enumerate(y_positions):
+        if i % 2 == 0:
+            # IGBT die (high power)
+            hm[int(nx*0.20):int(nx*(0.20+igbt_w)),
+               int(ny*y0f):int(ny*(y0f+die_h))] = 1.0
+        else:
+            # Diode die (medium power)
+            hm[int(nx*0.30):int(nx*(0.30+diode_w)),
+               int(ny*y0f):int(ny*(y0f+die_h))] = 0.55
+
+    hm = ndimage.gaussian_filter(hm, sigma=nx / 60.0)
+    if hm.max() > 0:
+        hm /= hm.max()
+    return hm
+
+
+def generate_soc_heatmap(nx, ny):
+    """Heterogeneous SoC: big.LITTLE CPU clusters, GPU block, memory controller, NPU."""
+    import scipy.ndimage as ndimage
+
+    hm = np.full((nx, ny), 0.06, dtype=np.float32)
+
+    # Big cores (2 high-power) — top-left
+    hm[int(nx*0.10):int(nx*0.35), int(ny*0.60):int(ny*0.90)] = 1.0
+
+    # Little cores (4 small low-power) — top-right
+    for dy in [0.08, 0.22]:
+        for dx in [0.10, 0.28]:
+            hm[int(nx*(dx)):int(nx*(dx+0.12)),
+               int(ny*(0.35+dy)):int(ny*(0.35+dy+0.10))] = 0.30
+
+    # GPU block — bottom half, large area, moderate power
+    hm[int(nx*0.50):int(nx*0.90), int(ny*0.35):int(ny*0.90)] = 0.65
+
+    # Memory controller strip — left edge
+    hm[int(nx*0.05):int(nx*0.95), int(ny*0.02):int(ny*0.12)] = 0.40
+
+    # NPU / AI accelerator — small high-power block
+    hm[int(nx*0.45):int(nx*0.60), int(ny*0.15):int(ny*0.30)] = 0.80
+
+    hm = ndimage.gaussian_filter(hm, sigma=nx / 70.0)
+    if hm.max() > 0:
+        hm /= hm.max()
+    return hm
+
+
+def generate_gaussian_hotspots_heatmap(nx, ny, seed=0):
+    """1-3 smooth Gaussian hotspots on a low background — analytical benchmark pattern."""
+    rng = np.random.RandomState(seed)
+    hm = np.full((nx, ny), 0.05, dtype=np.float32)
+
+    n_spots = rng.randint(1, 4)
+    xx, yy = np.meshgrid(np.arange(nx), np.arange(ny), indexing='ij')
+
+    for _ in range(n_spots):
+        cx = rng.uniform(0.2, 0.8) * nx
+        cy = rng.uniform(0.2, 0.8) * ny
+        sigma = rng.uniform(0.06, 0.15) * min(nx, ny)
+        amplitude = rng.uniform(0.5, 1.0)
+        hm += amplitude * np.exp(-((xx - cx)**2 + (yy - cy)**2) / (2 * sigma**2))
+
+    if hm.max() > 0:
+        hm /= hm.max()
+    return hm
+
+
+def generate_hotspot_on_background_heatmap(nx, ny):
+    """Uniform low-power background with 1-2 small intense hotspots (ALU/FPU style)."""
+    import scipy.ndimage as ndimage
+
+    hm = np.full((nx, ny), 0.20, dtype=np.float32)
+
+    # Hotspot 1 — small intense region
+    cx1, cy1 = int(nx * 0.40), int(ny * 0.60)
+    r1 = int(min(nx, ny) * 0.07)
+    xx, yy = np.ogrid[:nx, :ny]
+    hm[(xx - cx1)**2 + (yy - cy1)**2 < r1**2] = 1.0
+
+    # Hotspot 2 — slightly weaker
+    cx2, cy2 = int(nx * 0.65), int(ny * 0.35)
+    r2 = int(min(nx, ny) * 0.05)
+    hm[(xx - cx2)**2 + (yy - cy2)**2 < r2**2] = 0.85
+
+    hm = ndimage.gaussian_filter(hm, sigma=nx / 100.0)
+    if hm.max() > 0:
+        hm /= hm.max()
+    return hm
+
+
+def generate_peripheral_ring_heatmap(nx, ny):
+    """High power along perimeter (I/O pads, SerDes), cool interior — FPGA-style."""
+    import scipy.ndimage as ndimage
+
+    hm = np.full((nx, ny), 0.05, dtype=np.float32)
+
+    # Ring of I/O along all four edges
+    ring_w = 0.10
+    hm[:int(nx*ring_w), :] = 0.85          # top edge
+    hm[int(nx*(1-ring_w)):, :] = 0.85      # bottom edge
+    hm[:, :int(ny*ring_w)] = 0.85          # left edge
+    hm[:, int(ny*(1-ring_w)):] = 0.85      # right edge
+
+    # SerDes transceivers — high-power corners
+    corner_r = int(min(nx, ny) * 0.12)
+    xx, yy = np.ogrid[:nx, :ny]
+    for cx_f, cy_f in [(0.0, 0.0), (0.0, 1.0), (1.0, 0.0), (1.0, 1.0)]:
+        cx, cy = int(nx * cx_f), int(ny * cy_f)
+        hm[(xx - cx)**2 + (yy - cy)**2 < corner_r**2] = 1.0
+
+    # Cool FPGA fabric interior
+    hm[int(nx*0.20):int(nx*0.80), int(ny*0.20):int(ny*0.80)] = 0.15
+
+    hm = ndimage.gaussian_filter(hm, sigma=nx / 60.0)
+    if hm.max() > 0:
+        hm /= hm.max()
+    return hm
+
+
+# Registry of all heat source generators
+HEAT_SOURCE_REGISTRY = {
+    "uniform":              lambda nx, ny, **kw: np.ones((nx, ny), dtype=np.float32),
+    "dual_core":            lambda nx, ny, **kw: generate_dual_core_heatmap(nx, ny),
+    "quad_core":            lambda nx, ny, **kw: generate_quad_core_heatmap(nx, ny),
+    "gpu_die":              lambda nx, ny, **kw: generate_gpu_die_heatmap(nx, ny),
+    "chiplet":              lambda nx, ny, **kw: generate_chiplet_heatmap(nx, ny),
+    "igbt_half_bridge":     lambda nx, ny, **kw: generate_igbt_heatmap(nx, ny),
+    "soc_heterogeneous":    lambda nx, ny, **kw: generate_soc_heatmap(nx, ny),
+    "gaussian_hotspots":    lambda nx, ny, **kw: generate_gaussian_hotspots_heatmap(nx, ny, seed=kw.get("seed", 0)),
+    "hotspot_on_background": lambda nx, ny, **kw: generate_hotspot_on_background_heatmap(nx, ny),
+    "peripheral_ring":      lambda nx, ny, **kw: generate_peripheral_ring_heatmap(nx, ny),
+}
+
+HEAT_SOURCE_NAMES = list(HEAT_SOURCE_REGISTRY.keys())
+
+
 def generate_mask(state):
     """Generate the full mask with current state."""
     # Fixed seed for reproducibility in benchmark generation
