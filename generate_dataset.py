@@ -183,7 +183,7 @@ DESIGN_CONFIGS = {
         "ranges": {
             "feature_size": (2.0, 8.0),    # channel width 4-16 px
             "spacing":      (1.5, 7.0),    # channel count  6-28
-            "tau_fluid":    (0.505, 0.65),  # nu = 0.0017 - 0.050
+            "tau_fluid":    (0.51, 0.6),  # nu = 0.0017 - 0.050
             "u_inlet_val":  (0.01, 0.05),   # conservative: keeps Ma < 0.15 after constriction acceleration
             "heat_power":   (0.05, 0.20),
         },
@@ -193,7 +193,7 @@ DESIGN_CONFIGS = {
         "ranges": {
             "feature_size": (1.5, 5.0),     # pin diameter 3-10 px
             "spacing":      (2.0, 7.0),     # pitch 6-21 px
-            "tau_fluid":    (0.505, 0.65),
+            "tau_fluid":    (0.51, 0.6),
             "u_inlet_val":  (0.01, 0.05),
             "heat_power":   (0.05, 0.20),
         },
@@ -203,7 +203,7 @@ DESIGN_CONFIGS = {
         "ranges": {
             "feature_size": (4.0, 8.5),     # isovalue C: enough porosity for flow
             "spacing":      (2.0, 7.0),     # cell size 31-73 px
-            "tau_fluid":    (0.505, 0.65),
+            "tau_fluid":    (0.51, 0.6),
             "u_inlet_val":  (0.01, 0.05),
             "heat_power":   (0.05, 0.20),
         },
@@ -213,7 +213,7 @@ DESIGN_CONFIGS = {
         "ranges": {
             "feature_size": (4.0, 8.5),
             "spacing":      (2.0, 7.0),
-            "tau_fluid":    (0.505, 0.65),
+            "tau_fluid":    (0.51, 0.6),
             "u_inlet_val":  (0.01, 0.05),
             "heat_power":   (0.05, 0.20),
         },
@@ -223,7 +223,7 @@ DESIGN_CONFIGS = {
         "ranges": {
             "feature_size": (4.0, 8.5),
             "spacing":      (2.0, 7.0),
-            "tau_fluid":    (0.505, 0.65),
+            "tau_fluid":    (0.51, 0.6),
             "u_inlet_val":  (0.01, 0.05),
             "heat_power":   (0.05, 0.20),
         },
@@ -331,6 +331,7 @@ def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
     done = 0
     skipped = 0
     failed = 0
+
 
     for i, params in enumerate(all_samples):
         # Deterministic sample ID from parameters
@@ -503,7 +504,8 @@ def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
         status = "CONVERGED" if results["converged"] else "NOT CONVERGED"
         print(f"  {status} at step {results['steps']}/{max_steps} in {elapsed:.1f}s  "
               f"dKE={results['d_ke']:.1e}  dT={results['dT_conv']:.1e}  "
-              f"max_v={max_v:.4f}  Nu={metrics['Nu']:.2f}  R_th={metrics['R_th']:.4f}")
+              f"max_v={max_v:.4f}  maxT={metrics['T_max_surface']:.2f}  avgT={metrics['T_avg_surface']:.2f}  "
+              f"Nu={metrics['Nu']:.2f}  R_th={metrics['R_th']:.4f}")
 
         # Write metadata parquet after every sample so it's always up to date
         df_new = pd.DataFrame(metadata_rows)
@@ -668,7 +670,7 @@ If you use this dataset, please cite:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate cold plate CFD dataset")
     parser.add_argument("--output-dir", default="dataset", help="Output directory")
-    parser.add_argument("--samples-per-design", type=int, default=50,
+    parser.add_argument("--samples-per-design", type=int, default=200,
                         help="Number of LHS samples per design type")
     parser.add_argument("--max-steps", type=int, default=30000,
                         help="Max LBM timesteps per simulation")

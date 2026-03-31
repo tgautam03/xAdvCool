@@ -11,9 +11,9 @@ preview).  Figures are sized for NeurIPS 2-column format:
   - Max height:     9.0  in  (228.6 mm)
 
 Usage:
-    python analyze_dataset.py                            # default: datasets/
-    python analyze_dataset.py --data datasets/data.h5 --meta datasets/metadata.parquet
-    python analyze_dataset.py --data datasets/data.h5 --field-analysis   # expensive PCA on fields
+    python analyze_dataset.py                            # default: dataset/
+    python analyze_dataset.py --data dataset/data.h5 --meta dataset/metadata.parquet
+    python analyze_dataset.py --data dataset/data.h5 --field-analysis   # expensive PCA on fields
 """
 import argparse
 import os
@@ -268,9 +268,11 @@ def validate_sample(h5_path, sample_id):
     # 9. Energy balance
     # Heat injected per timestep: sum over cells of (1 - 0.5/tau) * heat_power * mask_val
     # At steady state this equals convective transport: Q_vol * (T_out - T_in)
+    # Heat source is applied at z=0 (solid base), so use tau_th_solid
     heat_power = attrs.get("heat_power", 0.0)
-    tau_th = 0.5 + (attrs.get("tau_fluid", 0.52) - 0.5) / 7.0
-    Q_source_rate = (1.0 - 0.5 / tau_th) * heat_power * float(np.sum(hs))
+    tau_th_fluid = 0.5 + (attrs.get("tau_fluid", 0.52) - 0.5) / 7.0
+    tau_th_solid = 0.5 + 628.0 * (tau_th_fluid - 0.5)
+    Q_source_rate = (1.0 - 0.5 / tau_th_solid) * heat_power * float(np.sum(hs))
 
     T_inlet_avg = float(np.mean(T[1, :, :][inlet_fluid])) if np.any(inlet_fluid) else t_inlet
     T_outlet_avg = float(np.mean(T[-2, :, :][outlet_fluid])) if np.any(outlet_fluid) else t_inlet
@@ -930,7 +932,7 @@ def representative_fields(h5_path, df, out_dir):
 def main():
     parser = argparse.ArgumentParser(
         description="Analyze and validate the cold plate CFD dataset")
-    parser.add_argument("--data", type=str, default="datasets/data.h5",
+    parser.add_argument("--data", type=str, default="dataset/data.h5",
                         help="Path to HDF5 dataset")
     parser.add_argument("--meta", type=str, default=None,
                         help="Path to metadata parquet (auto-detected if omitted)")

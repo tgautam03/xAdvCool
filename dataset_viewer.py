@@ -1,10 +1,11 @@
 """
 Interactive HDF5 Dataset Viewer
 Loads samples from the generated dataset and provides interactive 3D visualization
-of velocity, temperature, pressure fields with sample navigation and metadata display.
+of velocity (volume) and temperature (slices) fields simultaneously, with sample
+navigation and metadata display.
 
 Usage:
-    python dataset_viewer.py                          # default path: datasets/data.h5
+    python dataset_viewer.py                          # default path: dataset/data.h5
     python dataset_viewer.py --data path/to/data.h5
     python dataset_viewer.py --data path/to/data.h5 --sample 5
 """
@@ -82,7 +83,6 @@ class DatasetViewer:
             sys.exit(1)
 
         self.idx = min(start_idx, self.total - 1)
-        self.field = "velocity"  # current displayed field
 
         # PyVista state
         self.pl = pv.Plotter()
@@ -97,6 +97,9 @@ class DatasetViewer:
         self.slice_y = 0
         self.show_vol = True
         self.show_solids = True
+        self.slice_field_idx = 0  # 0=temperature, 1=pressure, 2=heat_source
+        self.slice_fields = ["temperature", "pressure", "heat_source"]
+        self.slice_cmaps = {"temperature": "inferno", "pressure": "viridis", "heat_source": "Oranges"}
 
         self._load_and_display()
         self._setup_widgets()
@@ -139,20 +142,18 @@ class DatasetViewer:
         self.slice_z = nz // 2
         self.slice_y = ny // 2
 
-        # Compute velocity magnitude
+        # Compute velocity magnitude (NaN in solids for volume rendering)
         u = data["velocity"]
         v_mag = np.linalg.norm(u, axis=-1).astype(np.float32)
         solid = (mask == BC_SOLID)
         v_mag[solid] = np.nan
         self.v_mag = v_mag
 
-        # Temperature with solids visible
+        # Temperature (keep solids visible on slices)
         T = data["temperature"].copy()
         self.T_field = T
-        self.T_fluid = T.copy()
-        self.T_fluid[solid] = np.nan
 
-        # Pressure
+        # Pressure (NaN in solids)
         P = data["pressure"].copy()
         P[solid] = np.nan
         self.P_field = P
@@ -162,13 +163,19 @@ class DatasetViewer:
 
         # Color ranges
         self.v_max = float(np.nanmax(v_mag)) if not np.all(np.isnan(v_mag)) else 0.05
-        self.t_range = (float(np.nanmin(T)), float(np.nanmax(T)))
-        self.p_range = (float(np.nanmin(P[~np.isnan(P)])), float(np.nanmax(P[~np.isnan(P)]))) if np.any(~np.isnan(P)) else (0, 1)
+        self.clims = {
+            "temperature": (float(np.nanmin(T)), float(np.nanmax(T))),
+            "pressure": (float(np.nanmin(P[~np.isnan(P)])), float(np.nanmax(P[~np.isnan(P)]))) if np.any(~np.isnan(P)) else (0, 1),
+            "heat_source": (0, max(float(np.max(self.heat_source)), 1e-6)),
+        }
 
-        # Build grid
+        # Build grid with all fields
         self.grid = pv.ImageData(dimensions=(nx + 1, ny + 1, nz + 1))
         self.grid.cell_data["mask"] = mask.flatten(order="F")
-        self._set_field_on_grid()
+        self.grid.cell_data["velocity"] = v_mag.flatten(order="F")
+        self.grid.cell_data["temperature"] = T.flatten(order="F")
+        self.grid.cell_data["pressure"] = P.flatten(order="F")
+        self.grid.cell_data["heat_source"] = self.heat_source.flatten(order="F")
 
         self.mesh = self.grid.cell_data_to_point_data()
 
@@ -181,7 +188,7 @@ class DatasetViewer:
         if "outline" not in self.actors:
             self.actors["outline"] = self.pl.add_mesh(self.grid.outline(), color="black")
 
-        # Volume rendering
+        # Velocity volume rendering
         self._add_volume()
 
         # Info text
@@ -193,63 +200,27 @@ class DatasetViewer:
         info_text = format_attrs_text({**attrs, "sample_id": sid}, self.idx, self.total)
         self.info_actor = self.pl.add_text(info_text, position="upper_left", font_size=8, color="white")
 
-        # Slices
+        # Temperature slices
         self._update_slices()
 
-    def _active_scalar(self):
-        if self.field == "velocity":
-            return "velocity"
-        elif self.field == "temperature":
-            return "temperature"
-        elif self.field == "pressure":
-            return "pressure"
-        elif self.field == "heat_source":
-            return "heat_source"
-        return "velocity"
-
-    def _active_cmap(self):
-        cmaps = {"velocity": "coolwarm", "temperature": "inferno", "pressure": "viridis", "heat_source": "Oranges"}
-        return cmaps.get(self.field, "coolwarm")
-
-    def _active_clim(self):
-        if self.field == "velocity":
-            return [0, self.v_max]
-        elif self.field == "temperature":
-            return list(self.t_range)
-        elif self.field == "pressure":
-            return list(self.p_range)
-        elif self.field == "heat_source":
-            hs_max = float(np.max(self.heat_source))
-            return [0, max(hs_max, 1e-6)]
-        return [0, 1]
-
-    def _set_field_on_grid(self):
-        if self.field == "velocity":
-            self.grid.cell_data["velocity"] = self.v_mag.flatten(order="F")
-        elif self.field == "temperature":
-            self.grid.cell_data["temperature"] = self.T_field.flatten(order="F")
-        elif self.field == "pressure":
-            self.grid.cell_data["pressure"] = self.P_field.flatten(order="F")
-        elif self.field == "heat_source":
-            self.grid.cell_data["heat_source"] = self.heat_source.flatten(order="F")
-
     def _add_volume(self):
+        """Add velocity volume rendering."""
         if self.vol_actor is not None:
             try:
                 self.pl.remove_actor(self.vol_actor)
             except Exception:
                 pass
-        scalar = self._active_scalar()
-        self._set_field_on_grid()
         opacity = [0, 0.0, 0.1, 0.3, 0.6]
         self.vol_actor = self.pl.add_volume(
-            self.grid, scalars=scalar, cmap=self._active_cmap(),
-            opacity=opacity, show_scalar_bar=True, clim=self._active_clim()
+            self.grid, scalars="velocity", cmap="coolwarm",
+            opacity=opacity, show_scalar_bar=True, clim=[0, self.v_max],
+            scalar_bar_args={"title": "Velocity"}
         )
         self.vol_actor.SetVisibility(self.show_vol)
 
     def _update_slices(self):
-        for key in ["slice_z", "slice_y"]:
+        """Update slices at current Z and Y positions with the active slice field."""
+        for key in ["slice_z", "slice_y", "slice_sbar"]:
             if key in self.actors:
                 try:
                     self.pl.remove_actor(self.actors[key])
@@ -257,28 +228,24 @@ class DatasetViewer:
                     pass
                 del self.actors[key]
 
-        scalar = self._active_scalar()
-        cmap = self._active_cmap()
-        clim = self._active_clim()
+        field = self.slice_fields[self.slice_field_idx]
+        cmap = self.slice_cmaps[field]
+        clim = list(self.clims[field])
 
-        # Ensure mesh has the current scalar
-        self._set_field_on_grid()
-        new_mesh = self.grid.cell_data_to_point_data()
-        self.mesh.point_data[scalar] = new_mesh.point_data[scalar]
-
-        # Z slice
+        # Z slice (horizontal cross-section)
         h_slice = self.mesh.slice(normal="z", origin=(self.nx // 2, self.ny // 2, self.slice_z))
         if h_slice.n_points > 0:
             self.actors["slice_z"] = self.pl.add_mesh(
-                h_slice, scalars=scalar, cmap=cmap, clim=clim,
-                nan_color="lightgray", show_scalar_bar=False
+                h_slice, scalars=field, cmap=cmap, clim=clim,
+                nan_color="lightgray", show_scalar_bar=True,
+                scalar_bar_args={"title": field.capitalize(), "position_x": 0.85}
             )
 
-        # Y slice
+        # Y slice (vertical cross-section)
         v_slice = self.mesh.slice(normal="y", origin=(self.nx // 2, self.slice_y, self.nz // 2))
         if v_slice.n_points > 0:
             self.actors["slice_y"] = self.pl.add_mesh(
-                v_slice, scalars=scalar, cmap=cmap, clim=clim,
+                v_slice, scalars=field, cmap=cmap, clim=clim,
                 nan_color="lightgray", show_scalar_bar=False
             )
 
@@ -303,6 +270,13 @@ class DatasetViewer:
             title="Y Slice", pointa=(0.75, 0.92), pointb=(0.95, 0.92), fmt="%.0f",
         )
 
+        # Slice field slider: 0=Temperature, 1=Pressure, 2=Heat Source
+        self.pl.add_slider_widget(
+            self._cb_field, [0, 2], value=self.slice_field_idx,
+            title="Slice Field (T / P / Q)",
+            pointa=(0.05, 0.05), pointb=(0.45, 0.05), fmt="%.0f",
+        )
+
         # Toggle checkboxes
         self.pl.add_checkbox_button_widget(
             self._cb_solid_toggle, value=True, color_on="tan", color_off="grey",
@@ -314,18 +288,13 @@ class DatasetViewer:
             self._cb_volume_toggle, value=True, color_on="orange", color_off="grey",
             position=(10, 60), size=40, border_size=2,
         )
-        self.pl.add_text("Volume", position=(60, 70), font_size=10)
+        self.pl.add_text("Velocity Vol", position=(60, 70), font_size=10)
 
-        # Field selection buttons
-        self.pl.add_key_event("1", lambda: self._switch_field("velocity"))
-        self.pl.add_key_event("2", lambda: self._switch_field("temperature"))
-        self.pl.add_key_event("3", lambda: self._switch_field("pressure"))
-        self.pl.add_key_event("4", lambda: self._switch_field("heat_source"))
         self.pl.add_key_event("Right", self._next_sample)
         self.pl.add_key_event("Left", self._prev_sample)
 
         self.pl.add_text(
-            "Keys: [1] Velocity  [2] Temperature  [3] Pressure  [4] Heat Source  |  Left/Right: Navigate samples",
+            "Volume: Velocity  |  Slices: use slider (0=Temp, 1=Pressure, 2=HeatSrc)  |  Left/Right: Navigate",
             position="lower_left", font_size=8, color="yellow",
         )
 
@@ -334,6 +303,13 @@ class DatasetViewer:
         if new_idx != self.idx:
             self.idx = new_idx
             self._load_and_display()
+
+    def _cb_field(self, value):
+        new_idx = int(round(value))
+        new_idx = max(0, min(new_idx, len(self.slice_fields) - 1))
+        if new_idx != self.slice_field_idx:
+            self.slice_field_idx = new_idx
+            self._update_slices()
 
     def _cb_z(self, value):
         self.slice_z = int(value)
@@ -353,12 +329,6 @@ class DatasetViewer:
         if self.vol_actor is not None:
             self.vol_actor.SetVisibility(flag)
 
-    def _switch_field(self, field_name):
-        if field_name != self.field:
-            self.field = field_name
-            self._add_volume()
-            self._update_slices()
-
     def _next_sample(self):
         if self.idx < self.total - 1:
             self.idx += 1
@@ -372,7 +342,7 @@ class DatasetViewer:
 
 def main():
     parser = argparse.ArgumentParser(description="Interactive HDF5 Dataset Viewer")
-    parser.add_argument("--data", type=str, default="datasets/data.h5", help="Path to HDF5 dataset file")
+    parser.add_argument("--data", type=str, default="dataset/data.h5", help="Path to HDF5 dataset file")
     parser.add_argument("--sample", type=int, default=0, help="Starting sample index")
     args = parser.parse_args()
 
