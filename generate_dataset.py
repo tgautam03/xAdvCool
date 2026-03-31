@@ -23,7 +23,8 @@ import numpy as np
 import pandas as pd
 from scipy.stats import qmc
 
-from geometry import (generate_mask, CORE_NX, CORE_NY, CORE_NZ, BC_SOLID,
+from geometry import (generate_mask, CORE_NX, CORE_NY, CORE_NZ,
+                      BC_SOLID, BC_INLET, BC_OUTLET,
                       HEAT_SOURCE_REGISTRY, HEAT_SOURCE_NAMES)
 from simulation import run_simulation
 
@@ -76,7 +77,7 @@ def compute_porosity(mask):
 # ---------------------------------------------------------------------------
 # Macroscopic performance metrics (post-simulation)
 # ---------------------------------------------------------------------------
-def compute_macroscopic_metrics(results, mask, params, Dh, A_wetted):
+def compute_macroscopic_metrics(results, mask, params, Dh, A_wetted, Pr=7.0):
     """Compute thermal-hydraulic performance metrics from converged fields.
 
     Returns a dict of scalar quantities:
@@ -90,14 +91,20 @@ def compute_macroscopic_metrics(results, mask, params, Dh, A_wetted):
 
     t_inlet = 25.0  # inlet temperature (same default as simulation.py)
 
+    # --- Inlet / Outlet masks (actual BC faces) ---
+    # Inlet BC is at x=0, outlet BC is at x=-1
+    inlet_bc = (mask[0, :, :] == BC_INLET)
+    outlet_bc = (mask[-1, :, :] == BC_OUTLET)
+    # Also grab one-cell-inside slices for pressure (BC cells may not have valid rho)
+    inlet_fluid = (mask[1, :, :] != BC_SOLID)
+    outlet_fluid = (mask[-2, :, :] != BC_SOLID)
+
     # --- Flow rate (volumetric) at outlet ---
-    # Outlet is at x = nx-2; sum x-velocities over fluid cells
-    outlet_mask = (mask[-2, :, :] != BC_SOLID)
-    Q_vol = float(np.sum(u_np[-2, :, :, 0][outlet_mask]))
+    Q_vol = float(np.sum(u_np[-1, :, :, 0][outlet_bc]))
 
     # --- Pressure drop ---
-    rho_in_avg = float(np.mean(rho_np[1, :, :]))
-    rho_out_avg = float(np.mean(rho_np[-2, :, :]))
+    rho_in_avg = float(np.mean(rho_np[1, :, :][inlet_fluid])) if np.any(inlet_fluid) else 1.0
+    rho_out_avg = float(np.mean(rho_np[-2, :, :][outlet_fluid])) if np.any(outlet_fluid) else 1.0
     delta_P = (rho_in_avg - rho_out_avg) / 3.0
 
     # --- Pumping power ---
@@ -112,24 +119,24 @@ def compute_macroscopic_metrics(results, mask, params, Dh, A_wetted):
     delta_T_max = T_max_surface - T_min_surface
     sigma_T = float(np.std(T_surface))
 
-    # --- Fluid temperature rise (outlet avg - inlet) ---
-    # Average T over fluid cells at inlet and outlet slices
-    inlet_fluid = (mask[1, :, :] != BC_SOLID)
-    outlet_fluid = outlet_mask
-    T_inlet_avg = float(np.mean(T_np[1, :, :][inlet_fluid])) if np.any(inlet_fluid) else t_inlet
-    T_outlet_avg = float(np.mean(T_np[-2, :, :][outlet_fluid])) if np.any(outlet_fluid) else t_inlet
+    # --- Fluid temperature rise (flow-weighted at actual BC faces) ---
+    # Inlet BC forces T=T_inlet, so use that directly.
+    # Outlet: flow-weighted average T to capture actual heat pickup.
+    T_inlet_avg = t_inlet  # Dirichlet BC at inlet
+    ux_out = u_np[-1, :, :, 0][outlet_bc]
+    T_out = T_np[-1, :, :][outlet_bc]
+    total_flux = float(np.sum(ux_out))
+    T_outlet_avg = float(np.sum(ux_out * T_out)) / total_flux if abs(total_flux) > 1e-12 else t_inlet
     fluid_temp_rise = T_outlet_avg - T_inlet_avg
 
-    # --- Total heat input (lattice units) ---
-    # Q_heat = heat_power * sum(heat_source_mask) per timestep
-    # For thermal resistance we use the effective total heat as heat_power * N_heated_cells
-    heat_power = params["heat_power"]
-    Q_heat = heat_power * Q_vol * fluid_temp_rise if fluid_temp_rise > 0 else 1e-12
+    # --- Heat absorbed by coolant (flow-weighted outlet - inlet flux) ---
+    # Q_absorbed = sum(ux * T) at outlet - sum(ux * T) at inlet
+    # Inlet is Dirichlet at T_inlet, so inlet flux = T_inlet * Q_vol
+    Q_out_flux = float(np.sum(ux_out * T_out))
+    Q_in_flux = t_inlet * total_flux
+    Q_absorbed = abs(Q_out_flux - Q_in_flux) if abs(Q_out_flux - Q_in_flux) > 1e-12 else 1e-12
 
     # --- Thermal resistance ---
-    # R_th = (T_max_surface - T_inlet) / Q_heat_total
-    # Use a heat balance: Q_absorbed = Q_vol * fluid_temp_rise (lattice units)
-    Q_absorbed = abs(Q_vol * fluid_temp_rise) if abs(Q_vol * fluid_temp_rise) > 1e-12 else 1e-12
     R_th = (T_max_surface - t_inlet) / Q_absorbed
 
     # --- Average heat transfer coefficient and Nusselt number ---
@@ -142,8 +149,8 @@ def compute_macroscopic_metrics(results, mask, params, Dh, A_wetted):
         h_avg = Q_absorbed / (A_wetted * abs(dT_conv))
     else:
         h_avg = 0.0
-    # k_fluid in LBM = cs^2 * (tau_th - 0.5) where tau_th = 0.5 + (tau-0.5)/7
-    tau_th_fluid = 0.5 + (params["tau_fluid"] - 0.5) / 7.0
+    # k_fluid in LBM = cs^2 * (tau_th - 0.5) where tau_th = 0.5 + (tau-0.5)/Pr
+    tau_th_fluid = 0.5 + (params["tau_fluid"] - 0.5) / Pr
     k_fluid = (1.0 / 3.0) * (tau_th_fluid - 0.5)
     Nu = (h_avg * Dh / k_fluid) if k_fluid > 1e-12 else 0.0
 
@@ -173,6 +180,20 @@ def compute_macroscopic_metrics(results, mask, params, Dh, A_wetted):
 
 
 # ---------------------------------------------------------------------------
+# Coolant configurations
+# ---------------------------------------------------------------------------
+COOLANT_CONFIGS = {
+    "water": {
+        "Pr": 7.0,          # Prandtl number
+        "k_ratio": 628.0,   # solid/fluid conductivity ratio (copper/water)
+    },
+    "air": {
+        "Pr": 0.71,         # Prandtl number
+        "k_ratio": 8000.0,  # solid/fluid conductivity ratio (aluminum/air)
+    },
+}
+
+# ---------------------------------------------------------------------------
 # Realistic parameter ranges per design type
 # ---------------------------------------------------------------------------
 # Each range is [low, high] for Latin Hypercube Sampling.
@@ -183,8 +204,8 @@ DESIGN_CONFIGS = {
         "ranges": {
             "feature_size": (2.0, 8.0),    # channel width 4-16 px
             "spacing":      (1.5, 7.0),    # channel count  6-28
-            "tau_fluid":    (0.51, 0.6),  # nu = 0.0017 - 0.050
-            "u_inlet_val":  (0.01, 0.05),   # conservative: keeps Ma < 0.15 after constriction acceleration
+            "tau_fluid":    (0.52, 0.56),   # tau_th_fluid >= 0.51 keeps omega_th < 1.97 (stable)
+            "u_inlet_val":  (0.02, 0.05),   # capped to keep Ma < 0.3 even at low porosity
             "heat_power":   (0.05, 0.20),
         },
     },
@@ -193,8 +214,8 @@ DESIGN_CONFIGS = {
         "ranges": {
             "feature_size": (1.5, 5.0),     # pin diameter 3-10 px
             "spacing":      (2.0, 7.0),     # pitch 6-21 px
-            "tau_fluid":    (0.51, 0.6),
-            "u_inlet_val":  (0.01, 0.05),
+            "tau_fluid":    (0.52, 0.56),
+            "u_inlet_val":  (0.02, 0.05),
             "heat_power":   (0.05, 0.20),
         },
     },
@@ -202,9 +223,9 @@ DESIGN_CONFIGS = {
         "design_idx": 3,
         "ranges": {
             "feature_size": (4.0, 8.5),     # isovalue C: enough porosity for flow
-            "spacing":      (2.0, 7.0),     # cell size 31-73 px
-            "tau_fluid":    (0.51, 0.6),
-            "u_inlet_val":  (0.01, 0.05),
+            "spacing":      (2.0, 6.0),     # cell size 29-64 px; capped to ensure >=2 unit cells at 128
+            "tau_fluid":    (0.52, 0.56),
+            "u_inlet_val":  (0.01, 0.025),  # lower cap: tortuous channels amplify velocity ~5x inlet
             "heat_power":   (0.05, 0.20),
         },
     },
@@ -212,9 +233,9 @@ DESIGN_CONFIGS = {
         "design_idx": 4,
         "ranges": {
             "feature_size": (4.0, 8.5),
-            "spacing":      (2.0, 7.0),
-            "tau_fluid":    (0.51, 0.6),
-            "u_inlet_val":  (0.01, 0.05),
+            "spacing":      (2.0, 6.0),     # capped to ensure >=2 unit cells at 128
+            "tau_fluid":    (0.52, 0.56),
+            "u_inlet_val":  (0.01, 0.025),  # lower cap: tortuous channels amplify velocity ~5x inlet
             "heat_power":   (0.05, 0.20),
         },
     },
@@ -222,9 +243,9 @@ DESIGN_CONFIGS = {
         "design_idx": 5,
         "ranges": {
             "feature_size": (4.0, 8.5),
-            "spacing":      (2.0, 7.0),
-            "tau_fluid":    (0.51, 0.6),
-            "u_inlet_val":  (0.01, 0.05),
+            "spacing":      (2.0, 6.0),     # capped to ensure >=2 unit cells at 128
+            "tau_fluid":    (0.52, 0.56),
+            "u_inlet_val":  (0.01, 0.025),  # lower cap: tortuous channels amplify velocity ~5x inlet
             "heat_power":   (0.05, 0.20),
         },
     },
@@ -285,7 +306,11 @@ def is_valid_geometry(mask):
 # ---------------------------------------------------------------------------
 def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
                      device="cuda", seed=42, resume=True,
-                     snapshot_every=0):
+                     snapshot_every=0, coolant="water"):
+    Pr = COOLANT_CONFIGS[coolant]["Pr"]
+    k_ratio = COOLANT_CONFIGS[coolant]["k_ratio"]
+    print(f"Coolant: {coolant}  Pr={Pr}  k_ratio={k_ratio}")
+
     os.makedirs(output_dir, exist_ok=True)
     h5_path = os.path.join(output_dir, "data.h5")
     meta_path = os.path.join(output_dir, "metadata.parquet")
@@ -334,9 +359,9 @@ def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
 
 
     for i, params in enumerate(all_samples):
-        # Deterministic sample ID from parameters
-        param_str = json.dumps(params, sort_keys=True)
-        sample_id = f"{params['design_name'].replace(' ', '_')}_{hashlib.md5(param_str.encode()).hexdigest()[:8]}"
+        # Deterministic sample ID from parameters (includes coolant to avoid collisions)
+        param_str = json.dumps(params, sort_keys=True) + f"|coolant={coolant}"
+        sample_id = f"{params['design_name'].replace(' ', '_')}_{coolant}_{hashlib.md5(param_str.encode()).hexdigest()[:8]}"
 
         if sample_id in existing_ids:
             done += 1
@@ -388,6 +413,8 @@ def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
                 tol_T=1e-5,
                 device=device,
                 silent=True,
+                Pr=Pr,
+                k_ratio=k_ratio,
             )
             elapsed = time.time() - t0
         except Exception as e:
@@ -395,21 +422,50 @@ def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
             print(f"  FAILED: {e}")
             continue
 
-        # Check for divergence
+        # Check for divergence (velocity, thermal explosion, or Ma > 0.3)
         u_np = results["u"]
+        T_np = results["T"]
         max_v = np.max(np.linalg.norm(u_np, axis=-1))
-        if np.isnan(max_v) or max_v > 0.5:
+        max_T = np.max(T_np)
+        Ma = max_v * (3.0 ** 0.5)
+        if np.isnan(max_v) or Ma > 0.3 or np.isnan(max_T) or max_T > 1e4:
             failed += 1
-            print(f"  DIVERGED (max_v={max_v:.4f})")
+            print(f"  DIVERGED (max_v={max_v:.2e}, Ma={Ma:.2f}, max_T={max_T:.2e})")
             continue
 
         # Compute output statistics
-        T_np = results["T"]
         rho_np = results["rho"]
         pressure = rho_np / 3.0  # p = rho * cs^2, cs^2 = 1/3
 
         # Compute macroscopic performance metrics
-        metrics = compute_macroscopic_metrics(results, mask, params, Dh, A_wetted)
+        metrics = compute_macroscopic_metrics(results, mask, params, Dh, A_wetted, Pr=Pr)
+
+        # Physical plausibility checks — skip unphysical samples
+        Nu = metrics["Nu"]
+        R_th = metrics["R_th"]
+        COP = metrics["COP"]
+        fluid_rise = metrics["fluid_temp_rise"]
+        plausibility_fail = False
+        reasons = []
+        if Nu < 0 or Nu > 2000 or np.isnan(Nu):
+            reasons.append(f"Nu={Nu:.1f}")
+            plausibility_fail = True
+        if R_th < 0 or R_th > 1000 or np.isnan(R_th):
+            reasons.append(f"R_th={R_th:.1f}")
+            plausibility_fail = True
+        if COP < 0 or np.isnan(COP):
+            reasons.append(f"COP={COP:.2e}")
+            plausibility_fail = True
+        if fluid_rise < 0 or np.isnan(fluid_rise):
+            reasons.append(f"fluid_temp_rise={fluid_rise:.2e}")
+            plausibility_fail = True
+        if not results["converged"]:
+            reasons.append("not converged")
+            plausibility_fail = True
+        if plausibility_fail:
+            failed += 1
+            print(f"  UNPHYSICAL ({', '.join(reasons)})")
+            continue
 
         # Write to HDF5 (one group per sample, compressed)
         with h5py.File(h5_path, "a") as f:
@@ -422,6 +478,9 @@ def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
             # Store scalar metadata as attributes
             for k, v in params.items():
                 grp.attrs[k] = v
+            grp.attrs["coolant"] = coolant
+            grp.attrs["Pr"] = Pr
+            grp.attrs["k_ratio"] = k_ratio
             grp.attrs["porosity"] = porosity
             grp.attrs["Dh"] = Dh
             grp.attrs["Re"] = Re
@@ -461,6 +520,9 @@ def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
         # Append metadata row
         row = {
             "sample_id": sample_id,
+            "coolant": coolant,
+            "Pr": Pr,
+            "k_ratio": k_ratio,
             "design_name": params["design_name"],
             "design_idx": params["design_idx"],
             "heat_source_type": params["heat_source_type"],
@@ -503,7 +565,7 @@ def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
 
         status = "CONVERGED" if results["converged"] else "NOT CONVERGED"
         print(f"  {status} at step {results['steps']}/{max_steps} in {elapsed:.1f}s  "
-              f"dKE={results['d_ke']:.1e}  dT={results['dT_conv']:.1e}  "
+              f"dKE={results['d_ke']:.1e}  dT={results['dT_conv']:.1e}  dQ={results.get('dQ_conv', float('nan')):.1e}  "
               f"max_v={max_v:.4f}  maxT={metrics['T_max_surface']:.2f}  avgT={metrics['T_avg_surface']:.2f}  "
               f"Nu={metrics['Nu']:.2f}  R_th={metrics['R_th']:.4f}")
 
@@ -680,6 +742,8 @@ if __name__ == "__main__":
                         help="Start fresh, ignore existing data")
     parser.add_argument("--snapshot-every", type=int, default=0,
                         help="Save a safe snapshot copy every N samples (0=off)")
+    parser.add_argument("--coolant", default="water", choices=list(COOLANT_CONFIGS.keys()),
+                        help="Coolant type (determines Pr and k_ratio)")
     args = parser.parse_args()
 
     # Generate dataset card
@@ -694,4 +758,5 @@ if __name__ == "__main__":
         seed=args.seed,
         resume=not args.no_resume,
         snapshot_every=args.snapshot_every,
+        coolant=args.coolant,
     )

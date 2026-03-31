@@ -24,7 +24,9 @@ def run_simulation(mask,
                    target_power=1.0,
                    device="cuda",
                    silent=False,
-                   heat_source=None):
+                   heat_source=None,
+                   Pr=7.0,
+                   k_ratio=628.0):
     """
     Runs a single LBM simulation and returns the final fields.
 
@@ -32,6 +34,8 @@ def run_simulation(mask,
         heat_source: Optional 3D numpy array (nx, ny, nz) of heat source
                      intensities (0.0-1.0). If None, uses the default
                      processor heatmap applied at the z=0 floor.
+        Pr: Prandtl number. Controls thermal diffusivity ratio (default 7.0 = water).
+        k_ratio: Solid/fluid thermal conductivity ratio (default 628.0 = copper/water).
     """
     wp.init()
 
@@ -63,8 +67,8 @@ def run_simulation(mask,
     f_old = wp.zeros((19, nx, ny, nz), dtype=wp.float32, device=device)
     f_new = wp.zeros((19, nx, ny, nz), dtype=wp.float32, device=device)
 
-    tau_th_fluid = 0.5 + ((tau_fluid - 0.5) / 7.0)
-    tau_th_solid = 0.5 + 628.0 * (tau_th_fluid - 0.5)
+    tau_th_fluid = 0.5 + ((tau_fluid - 0.5) / Pr)
+    tau_th_solid = 0.5 + k_ratio * (tau_th_fluid - 0.5)
 
     T = wp.full((nx, ny, nz), value=t_inlet, dtype=float, device=device)
     g_old = wp.zeros((19, nx, ny, nz), dtype=float, device=device)
@@ -108,7 +112,9 @@ def run_simulation(mask,
     max_v = 0.0
     u_in_eff = u_inlet_val
     stats_warp = wp.zeros(11, dtype=float, device=device)
-    stats_thermal_warp = wp.zeros(3, dtype=float, device=device)
+    stats_thermal_warp = wp.zeros(5, dtype=float, device=device)
+    prev_Q_out = 0.0
+    dQ_conv = 1.0
 
     step = 0
     while step < max_steps:
@@ -118,15 +124,17 @@ def run_simulation(mask,
             stats_warp.zero_()
             stats_thermal_warp.zero_()
             wp.launch(compute_stats_kernel, dim=(nx, ny, nz), inputs=[rho_warp, u, domain_mask, stats_warp, nx, ny, nz], device=device)
-            wp.launch(compute_thermal_stats_kernel, dim=(nx, ny, nz), inputs=[T, stats_thermal_warp], device=device)
+            wp.launch(compute_thermal_stats_kernel, dim=(nx, ny, nz), inputs=[T, stats_thermal_warp, u, domain_mask], device=device)
             stats_cpu = stats_warp.numpy()
             t_stats_cpu = stats_thermal_warp.numpy()
             max_v = float(stats_cpu[0])
             ke = float(stats_cpu[2])
             max_T = float(t_stats_cpu[0])
+            Q_out = float(t_stats_cpu[3])
             d_ke = abs(ke - prev_ke) / (prev_ke + 1e-9) / stats_every if step > stats_every else 0.0
             dT_conv = abs(max_T - prev_max_T) / (prev_max_T + 1e-9) / stats_every if step > stats_every else 0.0
-            prev_ke, prev_max_T = ke, max_T
+            dQ_conv = abs(Q_out - prev_Q_out) / (abs(prev_Q_out) + 1e-12) / stats_every if step > stats_every else 1.0
+            prev_ke, prev_max_T, prev_Q_out = ke, max_T, Q_out
 
             if pump_mode == "constant_power" and step > 2000:
                 u_in_eff = u_inlet_array.numpy()[0]
@@ -138,14 +146,17 @@ def run_simulation(mask,
                 u_inlet_array.assign([u_in_eff])
 
             if not silent:
-                pbar.set_postfix({"Re": f"{(u_in_eff*Dh)/((tau_fluid-0.5)/3.0):.1f}", "MaxV": f"{max_v:.4f}", "MaxT": f"{max_T:.2f}", "dKE": f"{d_ke:.1e}"})
-            if step > min_steps and d_ke < tol_ke and dT_conv < tol_T:
+                pbar.set_postfix({"Re": f"{(u_in_eff*Dh)/((tau_fluid-0.5)/3.0):.1f}", "MaxV": f"{max_v:.4f}", "MaxT": f"{max_T:.2f}", "dKE": f"{d_ke:.1e}", "dQ": f"{dQ_conv:.1e}"})
+            if step > min_steps and d_ke < tol_ke and dT_conv < tol_T and dQ_conv < tol_T:
                 break
-            if np.isnan(max_v) or max_v > 0.5:
+            if np.isnan(max_v) or max_v > 0.17 or np.isnan(max_T) or max_T > 1e4:
+                if not silent:
+                    Ma = max_v * (3.0 ** 0.5)
+                    print(f"\n⚠ Simulation diverged at step {step}: MaxV={max_v:.2e}, Ma={Ma:.2f}, MaxT={max_T:.2e}")
                 break
         pbar.update(1)
     pbar.close()
 
-    converged = step > min_steps and d_ke < tol_ke and dT_conv < tol_T
+    converged = step > min_steps and d_ke < tol_ke and dT_conv < tol_T and dQ_conv < tol_T
     return {"u": u.numpy(), "rho": rho_warp.numpy(), "T": T.numpy(), "mask": mask,
-            "steps": step, "d_ke": d_ke, "dT_conv": dT_conv, "converged": converged}
+            "steps": step, "d_ke": d_ke, "dT_conv": dT_conv, "dQ_conv": dQ_conv, "converged": converged}

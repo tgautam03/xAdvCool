@@ -67,8 +67,8 @@ inlet/outlet buffer zones):
 
 ## Grid
 
-- Domain: `256x256x64` core + 10-cell inlet/outlet buffers
-- Total grid per sample: `276x256x64`
+- Domain: `128x128x32` core + 10-cell inlet/outlet buffers
+- Total grid per sample: `148x128x32`
 
 ## Reynolds Number Range
 

@@ -1,0 +1,18 @@
+ML READINESS SCORECARD
+============================================================
+  Sample count                  : 185 samples, 5 design classes
+  Samples per class             : min=29, max=44
+  Output diversity (CV)         : All CV >= 0.15
+  Dynamic range (R_th)          : 1.2 decades
+  Dynamic range (Nu)            : 1.5 decades
+  Dynamic range (f_friction)    : 1.3 decades
+  Dynamic range (P_pump)        : 1.7 decades
+  Dynamic range (COP)           : 1.8 decades
+  Dynamic range (Q_vol)         : 1.4 decades
+  Dynamic range (delta_T_max)   : 1.3 decades
+  Dynamic range (sigma_T)       : 1.3 decades
+  Dynamic range (fluid_temp_rise): 1.4 decades
+  Easy targets (R2>0.95)        : None
+  Hard targets (R2<0.5)         : COP, T_avg_surface, T_max_surface, delta_T_max, fluid_temp_rise, sigma_T
+  Avg best baseline R2          : 0.456
+  Convergence rate              : 100.0%

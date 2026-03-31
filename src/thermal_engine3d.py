@@ -225,12 +225,19 @@ def compute_thermal_macroscopic_kernel(g: wp.array4d(dtype=float),       # Input
 
 @wp.kernel
 def compute_thermal_stats_kernel(T: wp.array3d(dtype=float),        # Input # type: ignore
-                                 stats: wp.array(dtype=float)       # Output: [max_t, sum_t, count] # type: ignore
+                                 stats: wp.array(dtype=float),      # Output: [max_t, sum_t, count, Q_out, Q_out_count] # type: ignore
+                                 u: wp.array3d(dtype=wp.vec3f),     # Fluid velocity # type: ignore
+                                 domain_mask: wp.array3d(dtype=int) # type: ignore
                                  ):
     x, y, z = wp.tid()
-    
+
     val = T[x, y, z]
-    
+
     wp.atomic_max(stats, 0, val)
     wp.atomic_add(stats, 1, val)
     wp.atomic_add(stats, 2, 1.0)
+
+    # Outlet heat flux: sum(u_x * T) over outlet cells
+    if domain_mask[x, y, z] == BC_OUTLET:
+        wp.atomic_add(stats, 3, u[x, y, z][0] * val)
+        wp.atomic_add(stats, 4, 1.0)

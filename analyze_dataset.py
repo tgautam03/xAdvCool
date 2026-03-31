@@ -103,7 +103,9 @@ def _design_style(designs):
 # ===================================================================
 
 BC_SOLID = 1
-CORE_NX, CORE_NY = 256, 256
+BC_INLET = 2
+BC_OUTLET = 3
+CORE_NX, CORE_NY = 128, 128
 BUF = 10
 
 THRESHOLDS = {
@@ -195,8 +197,10 @@ def validate_sample(h5_path, sample_id):
     t_inlet = 25.0
     checks = {"sample_id": sample_id}
 
-    # 1. Mass conservation
+    # 1. Mass conservation (one-cell-inside slices for proper rho*u)
     rho = P * 3.0
+    inlet_bc = (mask[0, :, :] == BC_INLET)
+    outlet_bc = (mask[-1, :, :] == BC_OUTLET)
     inlet_fluid = (mask[1, :, :] != BC_SOLID)
     outlet_fluid = (mask[-2, :, :] != BC_SOLID)
     mdot_in = float(np.sum(rho[1, :, :][inlet_fluid] * u[1, :, :, 0][inlet_fluid]))
@@ -266,22 +270,50 @@ def validate_sample(h5_path, sample_id):
     checks["div_warn"] = mean_div < THRESHOLDS["divergence_free"]["warn"]
 
     # 9. Energy balance
-    # Heat injected per timestep: sum over cells of (1 - 0.5/tau) * heat_power * mask_val
-    # At steady state this equals convective transport: Q_vol * (T_out - T_in)
-    # Heat source is applied at z=0 (solid base), so use tau_th_solid
+    # Heat injected: sum per cell of (1 - 0.5*omega) * heat_power * mask_val
+    # where omega = 1/tau differs for solid vs fluid cells
     heat_power = attrs.get("heat_power", 0.0)
-    tau_th_fluid = 0.5 + (attrs.get("tau_fluid", 0.52) - 0.5) / 7.0
-    tau_th_solid = 0.5 + 628.0 * (tau_th_fluid - 0.5)
+    Pr = attrs.get("Pr", 7.0)
+    k_ratio = attrs.get("k_ratio", 628.0)
+    tau_th_fluid = 0.5 + (attrs.get("tau_fluid", 0.52) - 0.5) / Pr
+    tau_th_solid = 0.5 + k_ratio * (tau_th_fluid - 0.5)
+
+    # Heat source is at z=0 which is always solid (base_thickness=4)
     Q_source_rate = (1.0 - 0.5 / tau_th_solid) * heat_power * float(np.sum(hs))
 
-    T_inlet_avg = float(np.mean(T[1, :, :][inlet_fluid])) if np.any(inlet_fluid) else t_inlet
-    T_outlet_avg = float(np.mean(T[-2, :, :][outlet_fluid])) if np.any(outlet_fluid) else t_inlet
-    Q_vol = attrs.get("Q_vol", 0.0)
-    Q_conv = abs(Q_vol * (T_outlet_avg - T_inlet_avg))
+    # Total heat flux = advective (u*T) + diffusive (-k * dT/dx) at each face
+    # k = (1/3) * (tau_th - 0.5), differs for solid vs fluid cells
+    k_fluid = (1.0 / 3.0) * (tau_th_fluid - 0.5)
+    k_solid = (1.0 / 3.0) * (tau_th_solid - 0.5)
 
-    energy_err = abs(Q_source_rate - Q_conv) / (Q_source_rate + 1e-12) if Q_source_rate > 1e-12 else 0.0
+    # Per-cell thermal conductivity at the one-cell-inside slices
+    k_in = np.where(mask[1, :, :] == BC_SOLID, k_solid, k_fluid)
+    k_out = np.where(mask[-2, :, :] == BC_SOLID, k_solid, k_fluid)
+
+    # Advective flux at BC faces
+    ux_in = u[0, :, :, 0][inlet_bc] if np.any(inlet_bc) else np.array([0.0])
+    ux_out = u[-1, :, :, 0][outlet_bc] if np.any(outlet_bc) else np.array([0.0])
+    T_out_bc = T[-1, :, :][outlet_bc] if np.any(outlet_bc) else np.array([t_inlet])
+    Q_adv_in = t_inlet * float(np.sum(ux_in))
+    Q_adv_out = float(np.sum(ux_out * T_out_bc))
+
+    # Diffusive flux: -k * dT/dx (positive = heat flowing in +x direction)
+    # Inlet: gradient from x=0 to x=1 for ALL cells (solid conducts heat backward)
+    dT_in = T[1, :, :] - T[0, :, :]   # T[0] = T_inlet for BC_INLET, T for solid
+    Q_diff_in = float(np.sum(-k_in * dT_in))   # net diffusive flux entering at inlet face
+
+    # Outlet: gradient from x=-2 to x=-1
+    dT_out = T[-1, :, :] - T[-2, :, :]
+    Q_diff_out = float(np.sum(-k_out * dT_out))  # net diffusive flux leaving at outlet face
+
+    # Net heat removed = (adv_out + diff_out) - (adv_in + diff_in)
+    Q_total_out = Q_adv_out + Q_diff_out
+    Q_total_in = Q_adv_in + Q_diff_in
+    Q_removed = Q_total_out - Q_total_in
+
+    energy_err = abs(Q_source_rate - Q_removed) / (abs(Q_source_rate) + 1e-12) if abs(Q_source_rate) > 1e-12 else 0.0
     checks["Q_source_rate"] = Q_source_rate
-    checks["Q_conv"] = Q_conv
+    checks["Q_conv"] = Q_removed
     checks["energy_err"] = energy_err
     checks["energy_pass"] = energy_err < 0.20
     checks["energy_warn"] = energy_err < 0.40

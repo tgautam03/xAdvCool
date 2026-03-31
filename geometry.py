@@ -12,7 +12,7 @@ BC_INLET = 2
 BC_OUTLET = 3
 
 # === CONFIGURATION (edit these before running) ===
-CORE_NX, CORE_NY, CORE_NZ = 256, 256, 64
+CORE_NX, CORE_NY, CORE_NZ = 128, 128, 32
 
 # Current state
 state = {
