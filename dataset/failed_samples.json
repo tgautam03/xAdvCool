@@ -412,5 +412,11 @@
  "Pin-Fin_Staggered_water_dcc1b3e5": "unphysical (R_th=2872.4, not converged)",
  "Schwarz_P_TPMS_water_9705d3df": "unphysical (not converged)",
  "Pin-Fin_Staggered_water_55bd48f2": "invalid geometry (porosity=15.06%)",
- "Schwarz_P_TPMS_water_8ba45d6f": "diverged (max_v=1.73e-01, Ma=0.30, max_T=2.86e+01)"
+ "Schwarz_P_TPMS_water_8ba45d6f": "diverged (max_v=1.73e-01, Ma=0.30, max_T=2.86e+01)",
+ "Pin-Fin_Staggered_water_f17fcf99": "unphysical (not converged)",
+ "Schwarz_P_TPMS_water_576b2b8e": "diverged (max_v=1.77e-01, Ma=0.31, max_T=3.06e+01)",
+ "Pin-Fin_Staggered_water_203f39b8": "invalid geometry (porosity=8.35%)",
+ "Gyroid_TPMS_water_ae68ec46": "diverged (max_v=1.82e-01, Ma=0.31, max_T=2.95e+01)",
+ "Gyroid_TPMS_water_7e6d5b45": "diverged (max_v=1.76e-01, Ma=0.30, max_T=2.91e+01)",
+ "Gyroid_TPMS_water_d3f37276": "unphysical (R_th=157835.7, not converged)"
 }

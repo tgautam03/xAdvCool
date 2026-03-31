@@ -128,6 +128,35 @@ python -m benchmark.evaluate --config benchmark/configs/task_a_unet3d.yaml \
 
 ---
 
+## Analytical Validation
+
+11 test cases validate the LBM solvers against known analytical solutions:
+
+**Thermal solver:**
+| Test | Reference solution | Threshold |
+|------|--------------------|-----------|
+| 1D semi-infinite conduction | `T(x,t) = T_s * erfc(x / 2*sqrt(alpha*t))` | < 3% |
+| Advection-diffusion Gaussian | Gaussian spreading with drift | < 3% |
+| Conjugate slab (CHT) | Steady-state two-material conduction | < 3% |
+| Volumetric heat source | Poisson equation (parabolic profile) | < 3% |
+
+**Fluid solver:**
+| Test | Reference solution | Threshold |
+|------|--------------------|-----------|
+| 3D rectangular Poiseuille | Analytical duct flow profile | < 3% |
+| Taylor-Green vortex decay | Exponential viscous decay | < 3% |
+| Couette flow | Linear velocity profile | < 3% |
+| Kuwabara pin-fin drag | Kuwabara cell model | < 5% |
+
+**Convergence & sensitivity:**
+| Test | What it checks | Threshold |
+|------|---------------|-----------|
+| Poiseuille grid convergence | Spatial convergence order | >= 1.8 (expect ~2.0) |
+| Taylor-Green convergence | Temporal convergence order | >= 1.8 |
+| Mach number sensitivity | Error at high Ma | < 5% |
+
+---
+
 ## Physics Engine
 
 - **Fluid:** D3Q19 lattice, BGK collision, bounce-back boundaries
