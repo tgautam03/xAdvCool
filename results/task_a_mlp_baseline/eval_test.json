@@ -1,0 +1,41 @@
+{
+  "model": "mlp_baseline",
+  "task": "field_prediction",
+  "split": "test",
+  "n_samples": 196,
+  "n_params": 69125,
+  "metrics": {
+    "overall_rel_l2": {
+      "mean": 0.892872154712677,
+      "std": 0.10543833673000336
+    },
+    "overall_rmse": {
+      "mean": 0.8160867691040039,
+      "std": 0.28103116154670715
+    },
+    "mass_conservation_violation": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "velocity_x_rel_l2": {
+      "mean": 0.8904045820236206,
+      "std": 0.1486661583185196
+    },
+    "velocity_y_rel_l2": {
+      "mean": 1.00083327293396,
+      "std": 0.03969084098935127
+    },
+    "velocity_z_rel_l2": {
+      "mean": 1.0057401657104492,
+      "std": 0.034429218620061874
+    },
+    "temperature_rel_l2": {
+      "mean": 0.6755116581916809,
+      "std": 0.3472117781639099
+    },
+    "pressure_rel_l2": {
+      "mean": 0.9261986017227173,
+      "std": 0.12111479043960571
+    }
+  }
+}

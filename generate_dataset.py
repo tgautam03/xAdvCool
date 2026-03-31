@@ -180,18 +180,10 @@ def compute_macroscopic_metrics(results, mask, params, Dh, A_wetted, Pr=7.0):
 
 
 # ---------------------------------------------------------------------------
-# Coolant configurations
+# Coolant properties (water with copper cold plate)
 # ---------------------------------------------------------------------------
-COOLANT_CONFIGS = {
-    "water": {
-        "Pr": 7.0,          # Prandtl number
-        "k_ratio": 628.0,   # solid/fluid conductivity ratio (copper/water)
-    },
-    "air": {
-        "Pr": 0.71,         # Prandtl number
-        "k_ratio": 8000.0,  # solid/fluid conductivity ratio (aluminum/air)
-    },
-}
+COOLANT_PR = 7.0          # Prandtl number (water at ~20°C)
+COOLANT_K_RATIO = 628.0   # solid/fluid conductivity ratio (copper/water)
 
 # ---------------------------------------------------------------------------
 # Realistic parameter ranges per design type
@@ -301,15 +293,21 @@ def is_valid_geometry(mask):
     return True, porosity
 
 
+def _save_failed(path, failed_ids):
+    """Persist failed sample IDs to disk so they are skipped on resume."""
+    with open(path, "w") as f:
+        json.dump(failed_ids, f, indent=1)
+
+
 # ---------------------------------------------------------------------------
 # Main dataset generation
 # ---------------------------------------------------------------------------
 def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
                      device="cuda", seed=42, resume=True,
-                     snapshot_every=0, coolant="water"):
-    Pr = COOLANT_CONFIGS[coolant]["Pr"]
-    k_ratio = COOLANT_CONFIGS[coolant]["k_ratio"]
-    print(f"Coolant: {coolant}  Pr={Pr}  k_ratio={k_ratio}")
+                     snapshot_every=0):
+    Pr = COOLANT_PR
+    k_ratio = COOLANT_K_RATIO
+    print(f"Coolant: water (copper)  Pr={Pr}  k_ratio={k_ratio}")
 
     os.makedirs(output_dir, exist_ok=True)
     h5_path = os.path.join(output_dir, "data.h5")
@@ -321,6 +319,8 @@ def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
     # Collect existing sample IDs for resume support and rebuild parquet
     # from HDF5 if it's missing (e.g. script was stopped before first write)
     existing_ids = set()
+    failed_ids_path = os.path.join(output_dir, "failed_samples.json")
+    failed_ids: dict[str, str] = {}  # sample_id -> reason
     if resume and os.path.exists(h5_path):
         with h5py.File(h5_path, "r") as f:
             existing_ids = set(f.keys())
@@ -334,6 +334,10 @@ def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
                     rows.append(row)
                 pd.DataFrame(rows).to_parquet(meta_path, index=False)
         print(f"Resuming: {len(existing_ids)} samples already in {h5_path}")
+    if resume and os.path.exists(failed_ids_path):
+        with open(failed_ids_path, "r") as f:
+            failed_ids = json.load(f)
+        print(f"Skipping {len(failed_ids)} previously failed samples")
 
     # Build full sample list.  Each design's LHS points are shuffled
     # independently so that the first N samples already span the full
@@ -359,12 +363,17 @@ def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
 
 
     for i, params in enumerate(all_samples):
-        # Deterministic sample ID from parameters (includes coolant to avoid collisions)
-        param_str = json.dumps(params, sort_keys=True) + f"|coolant={coolant}"
-        sample_id = f"{params['design_name'].replace(' ', '_')}_{coolant}_{hashlib.md5(param_str.encode()).hexdigest()[:8]}"
+        # Deterministic sample ID from parameters
+        # NOTE: "|coolant=water" suffix kept for backward compatibility with existing sample IDs
+        param_str = json.dumps(params, sort_keys=True) + "|coolant=water"
+        sample_id = f"{params['design_name'].replace(' ', '_')}_water_{hashlib.md5(param_str.encode()).hexdigest()[:8]}"
 
         if sample_id in existing_ids:
             done += 1
+            continue
+
+        if sample_id in failed_ids:
+            skipped += 1
             continue
 
         # Generate geometry mask
@@ -380,6 +389,8 @@ def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
         valid, porosity = is_valid_geometry(mask)
         if not valid:
             skipped += 1
+            failed_ids[sample_id] = f"invalid geometry (porosity={porosity:.2%})"
+            _save_failed(failed_ids_path, failed_ids)
             print(f"[{i+1}/{total}] SKIP {sample_id} (porosity={porosity:.2%})")
             continue
 
@@ -419,6 +430,8 @@ def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
             elapsed = time.time() - t0
         except Exception as e:
             failed += 1
+            failed_ids[sample_id] = f"exception: {e}"
+            _save_failed(failed_ids_path, failed_ids)
             print(f"  FAILED: {e}")
             continue
 
@@ -430,6 +443,8 @@ def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
         Ma = max_v * (3.0 ** 0.5)
         if np.isnan(max_v) or Ma > 0.3 or np.isnan(max_T) or max_T > 1e4:
             failed += 1
+            failed_ids[sample_id] = f"diverged (max_v={max_v:.2e}, Ma={Ma:.2f}, max_T={max_T:.2e})"
+            _save_failed(failed_ids_path, failed_ids)
             print(f"  DIVERGED (max_v={max_v:.2e}, Ma={Ma:.2f}, max_T={max_T:.2e})")
             continue
 
@@ -464,6 +479,8 @@ def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
             plausibility_fail = True
         if plausibility_fail:
             failed += 1
+            failed_ids[sample_id] = f"unphysical ({', '.join(reasons)})"
+            _save_failed(failed_ids_path, failed_ids)
             print(f"  UNPHYSICAL ({', '.join(reasons)})")
             continue
 
@@ -478,7 +495,7 @@ def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
             # Store scalar metadata as attributes
             for k, v in params.items():
                 grp.attrs[k] = v
-            grp.attrs["coolant"] = coolant
+            grp.attrs["coolant"] = "water"
             grp.attrs["Pr"] = Pr
             grp.attrs["k_ratio"] = k_ratio
             grp.attrs["porosity"] = porosity
@@ -520,7 +537,6 @@ def generate_dataset(output_dir, samples_per_design=50, max_steps=30000,
         # Append metadata row
         row = {
             "sample_id": sample_id,
-            "coolant": coolant,
             "Pr": Pr,
             "k_ratio": k_ratio,
             "design_name": params["design_name"],
@@ -742,8 +758,6 @@ if __name__ == "__main__":
                         help="Start fresh, ignore existing data")
     parser.add_argument("--snapshot-every", type=int, default=0,
                         help="Save a safe snapshot copy every N samples (0=off)")
-    parser.add_argument("--coolant", default="water", choices=list(COOLANT_CONFIGS.keys()),
-                        help="Coolant type (determines Pr and k_ratio)")
     args = parser.parse_args()
 
     # Generate dataset card
@@ -758,5 +772,4 @@ if __name__ == "__main__":
         seed=args.seed,
         resume=not args.no_resume,
         snapshot_every=args.snapshot_every,
-        coolant=args.coolant,
     )

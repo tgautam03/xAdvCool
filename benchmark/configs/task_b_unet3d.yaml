@@ -1,0 +1,21 @@
+# Task B: Geometry-only field prediction with 3D U-Net
+task: field_prediction
+model: unet3d
+
+data:
+  split: geometry_only
+  heat_source_type: uniform
+  input_fields: [mask]
+  target_fields: [velocity, temperature, pressure]
+
+model_args:
+  in_channels: 1
+  out_channels: 5
+  scalar_dim: 5
+  features: [32, 64, 128, 256]
+
+training:
+  output_dir: results/task_b_unet3d
+  epochs: 100
+  batch_size: 4
+  lr: 1.0e-3

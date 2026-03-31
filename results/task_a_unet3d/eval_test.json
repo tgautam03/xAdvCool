@@ -1,0 +1,41 @@
+{
+  "model": "unet3d",
+  "task": "field_prediction",
+  "split": "test",
+  "n_samples": 196,
+  "n_params": 22715077,
+  "metrics": {
+    "overall_rel_l2": {
+      "mean": 0.6941189765930176,
+      "std": 0.16644597053527832
+    },
+    "overall_rmse": {
+      "mean": 0.6078141927719116,
+      "std": 0.2464226484298706
+    },
+    "mass_conservation_violation": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "velocity_x_rel_l2": {
+      "mean": 0.6199536919593811,
+      "std": 0.2412240356206894
+    },
+    "velocity_y_rel_l2": {
+      "mean": 1.7289178371429443,
+      "std": 1.51311457157135
+    },
+    "velocity_z_rel_l2": {
+      "mean": 1.566267967224121,
+      "std": 1.5591521263122559
+    },
+    "temperature_rel_l2": {
+      "mean": 0.6644895076751709,
+      "std": 0.25069350004196167
+    },
+    "pressure_rel_l2": {
+      "mean": 0.5599550008773804,
+      "std": 0.19405297935009003
+    }
+  }
+}

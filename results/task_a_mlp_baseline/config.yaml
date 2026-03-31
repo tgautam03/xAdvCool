@@ -1,0 +1,38 @@
+{
+  "data": {
+    "h5_path": "dataset/data.h5",
+    "metadata_path": "dataset/metadata.parquet",
+    "crop_buffer": true,
+    "input_fields": [
+      "mask",
+      "heat_source"
+    ],
+    "target_fields": [
+      "velocity",
+      "temperature",
+      "pressure"
+    ],
+    "max_samples": null,
+    "split": "canonical"
+  },
+  "training": {
+    "epochs": 50,
+    "batch_size": 8,
+    "lr": 0.001,
+    "weight_decay": 1e-05,
+    "scheduler": "cosine",
+    "num_workers": 4,
+    "seed": 42,
+    "amp": true,
+    "checkpoint_every": 20,
+    "output_dir": "results/task_a_mlp_baseline"
+  },
+  "task": "field_prediction",
+  "model": "mlp_baseline",
+  "model_args": {
+    "in_channels": 2,
+    "out_channels": 5,
+    "scalar_dim": 5,
+    "hidden_dim": 256
+  }
+}

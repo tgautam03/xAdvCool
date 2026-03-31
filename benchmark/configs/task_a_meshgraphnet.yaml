@@ -1,0 +1,20 @@
+# Task A: Full-input field prediction with MeshGraphNet
+task: field_prediction
+model: meshgraphnet
+
+data:
+  split: canonical
+
+model_args:
+  in_channels: 2
+  out_channels: 5
+  scalar_dim: 5
+  hidden_dim: 128
+  n_layers: 6
+  subsample_factor: 4
+
+training:
+  output_dir: results/task_a_meshgraphnet
+  epochs: 100
+  batch_size: 2
+  lr: 1.0e-3

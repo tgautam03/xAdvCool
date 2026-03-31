@@ -1,0 +1,347 @@
+{
+  "@context": {
+    "@language": "en",
+    "@vocab": "https://schema.org/",
+    "sc": "https://schema.org/",
+    "cr": "http://mlcommons.org/croissant/",
+    "dct": "https://purl.org/dc/terms/"
+  },
+  "@type": "sc:Dataset",
+  "name": "xAdvCool",
+  "description": "A benchmark dataset of 3D conjugate heat transfer (CHT) simulations for data-driven surrogate modeling of cold plate heat sinks. Contains Lattice Boltzmann simulations across 5 topology types (Straight Channels, Pin-Fin Staggered, Gyroid TPMS, Schwarz P TPMS, Schwarz D TPMS) and 10 heat source patterns, with water cooling through copper cold plates. Each sample maps a geometry mask and operating conditions to steady-state velocity, pressure, and temperature fields on a 148x128x32 lattice.",
+  "dct:conformsTo": "http://mlcommons.org/croissant/1.0",
+  "license": "https://creativecommons.org/licenses/by/4.0/",
+  "url": "https://huggingface.co/datasets/tgautam03/xAdvCool",
+  "version": "1.0.0",
+  "citation": "Gautam, T. (2026). xAdvCool: A Benchmark Dataset for 3D Conjugate Heat Transfer Surrogate Modeling. NeurIPS Datasets and Benchmarks Track.",
+  "creator": {
+    "@type": "Person",
+    "name": "Tushar Gautam"
+  },
+  "datePublished": "2026-03-31",
+  "keywords": [
+    "physics",
+    "simulation",
+    "cfd",
+    "conjugate-heat-transfer",
+    "lattice-boltzmann",
+    "cold-plate",
+    "topology-optimization",
+    "surrogate-modeling"
+  ],
+  "distribution": [
+    {
+      "@type": "sc:FileObject",
+      "@id": "data.h5",
+      "name": "data.h5",
+      "description": "HDF5 file containing all simulation samples. Each top-level group is a sample keyed by sample_id, containing 5 datasets (mask, heat_source, velocity, pressure, temperature) and scalar attributes.",
+      "contentUrl": "https://huggingface.co/datasets/tgautam03/xAdvCool/resolve/main/data.h5",
+      "encodingFormat": "application/x-hdf5",
+      "sha256": "01779102d2e88c49fa2e548a34fd0e2465c25d8fe5cc353cf5e3b69a3aac19d3"
+    },
+    {
+      "@type": "sc:FileObject",
+      "@id": "metadata.parquet",
+      "name": "metadata.parquet",
+      "description": "Parquet metadata index with scalar parameters and performance metrics for each sample.",
+      "contentUrl": "https://huggingface.co/datasets/tgautam03/xAdvCool/resolve/main/metadata.parquet",
+      "encodingFormat": "application/x-parquet",
+      "sha256": "4b15ac9b785f277df08d18114ee7bd37cc52cf5fa3ed1ed832645a543adf1f79"
+    }
+  ],
+  "recordSet": [
+    {
+      "@type": "cr:RecordSet",
+      "@id": "samples",
+      "name": "samples",
+      "description": "Individual CHT simulation samples. 3D field data is stored in the HDF5 file; scalar metadata is in the Parquet file. Linked by sample_id.",
+      "field": [
+        {
+          "@type": "cr:Field",
+          "@id": "samples/sample_id",
+          "name": "sample_id",
+          "description": "Unique sample identifier (also the HDF5 group key)",
+          "dataType": "sc:Text",
+          "source": {
+            "fileObject": {
+              "@id": "metadata.parquet"
+            },
+            "extract": {
+              "column": "sample_id"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/design_name",
+          "name": "design_name",
+          "description": "Geometry topology type: Straight Channels, Pin-Fin Staggered, Gyroid TPMS, Schwarz P TPMS, or Schwarz D TPMS",
+          "dataType": "sc:Text",
+          "source": {
+            "fileObject": {
+              "@id": "metadata.parquet"
+            },
+            "extract": {
+              "column": "design_name"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/heat_source_type",
+          "name": "heat_source_type",
+          "description": "Heat source pattern name (e.g., uniform, dual_core, gpu_die)",
+          "dataType": "sc:Text",
+          "source": {
+            "fileObject": {
+              "@id": "metadata.parquet"
+            },
+            "extract": {
+              "column": "heat_source_type"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/feature_size",
+          "name": "feature_size",
+          "description": "Geometric feature size parameter (lattice units)",
+          "dataType": "sc:Float",
+          "source": {
+            "fileObject": {
+              "@id": "metadata.parquet"
+            },
+            "extract": {
+              "column": "feature_size"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/spacing",
+          "name": "spacing",
+          "description": "Geometric spacing parameter (lattice units)",
+          "dataType": "sc:Float",
+          "source": {
+            "fileObject": {
+              "@id": "metadata.parquet"
+            },
+            "extract": {
+              "column": "spacing"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/tau_fluid",
+          "name": "tau_fluid",
+          "description": "BGK relaxation time for fluid (controls viscosity: nu = (tau - 0.5)/3)",
+          "dataType": "sc:Float",
+          "source": {
+            "fileObject": {
+              "@id": "metadata.parquet"
+            },
+            "extract": {
+              "column": "tau_fluid"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/u_inlet_val",
+          "name": "u_inlet_val",
+          "description": "Inlet velocity magnitude (lattice units)",
+          "dataType": "sc:Float",
+          "source": {
+            "fileObject": {
+              "@id": "metadata.parquet"
+            },
+            "extract": {
+              "column": "u_inlet_val"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/heat_power",
+          "name": "heat_power",
+          "description": "Total heat power input (lattice units)",
+          "dataType": "sc:Float",
+          "source": {
+            "fileObject": {
+              "@id": "metadata.parquet"
+            },
+            "extract": {
+              "column": "heat_power"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/Re",
+          "name": "Re",
+          "description": "Reynolds number based on hydraulic diameter",
+          "dataType": "sc:Float",
+          "source": {
+            "fileObject": {
+              "@id": "metadata.parquet"
+            },
+            "extract": {
+              "column": "Re"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/Nu",
+          "name": "Nu",
+          "description": "Nusselt number (dimensionless heat transfer coefficient)",
+          "dataType": "sc:Float",
+          "source": {
+            "fileObject": {
+              "@id": "metadata.parquet"
+            },
+            "extract": {
+              "column": "Nu"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/R_th",
+          "name": "R_th",
+          "description": "Thermal resistance (lattice units)",
+          "dataType": "sc:Float",
+          "source": {
+            "fileObject": {
+              "@id": "metadata.parquet"
+            },
+            "extract": {
+              "column": "R_th"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/f_friction",
+          "name": "f_friction",
+          "description": "Darcy friction factor",
+          "dataType": "sc:Float",
+          "source": {
+            "fileObject": {
+              "@id": "metadata.parquet"
+            },
+            "extract": {
+              "column": "f_friction"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/COP",
+          "name": "COP",
+          "description": "Coefficient of Performance (thermal performance / pumping cost)",
+          "dataType": "sc:Float",
+          "source": {
+            "fileObject": {
+              "@id": "metadata.parquet"
+            },
+            "extract": {
+              "column": "COP"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/converged",
+          "name": "converged",
+          "description": "Whether the simulation reached steady-state convergence",
+          "dataType": "sc:Boolean",
+          "source": {
+            "fileObject": {
+              "@id": "metadata.parquet"
+            },
+            "extract": {
+              "column": "converged"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/mask",
+          "name": "mask",
+          "description": "3D geometry mask (int8, 148x128x32). Values: 0=solid, 1=fluid, 2=inlet, 3=outlet",
+          "dataType": "sc:Integer",
+          "source": {
+            "fileObject": {
+              "@id": "data.h5"
+            },
+            "extract": {
+              "column": "mask"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/heat_source",
+          "name": "heat_source",
+          "description": "3D heat source distribution (float32, 148x128x32)",
+          "dataType": "sc:Float",
+          "source": {
+            "fileObject": {
+              "@id": "data.h5"
+            },
+            "extract": {
+              "column": "heat_source"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/velocity",
+          "name": "velocity",
+          "description": "3D steady-state velocity field (float32, 148x128x32x3, channels: x,y,z)",
+          "dataType": "sc:Float",
+          "source": {
+            "fileObject": {
+              "@id": "data.h5"
+            },
+            "extract": {
+              "column": "velocity"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/pressure",
+          "name": "pressure",
+          "description": "3D steady-state pressure field (float32, 148x128x32)",
+          "dataType": "sc:Float",
+          "source": {
+            "fileObject": {
+              "@id": "data.h5"
+            },
+            "extract": {
+              "column": "pressure"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "samples/temperature",
+          "name": "temperature",
+          "description": "3D steady-state temperature field (float32, 148x128x32)",
+          "dataType": "sc:Float",
+          "source": {
+            "fileObject": {
+              "@id": "data.h5"
+            },
+            "extract": {
+              "column": "temperature"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
