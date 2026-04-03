@@ -166,6 +166,23 @@ python -m benchmark.evaluate --config benchmark/configs/task_a_unet3d.yaml \
 
 ---
 
+Dataset generation complete.
+  Completed: 8071  Skipped: 1411  Failed: 518
+  HDF5: dataset/data.h5
+  Metadata: dataset/metadata.parquet
+
+  --- Simulation Cost Summary ---
+  Hardware:              NVIDIA GeForce RTX 3090
+  Total wall time:       41030s (11.4h)
+  Total simulation time: 36952s (10.3h)
+  Total timesteps:       43,759,100
+  Total lattice updates: 2.653e+13
+  Average throughput:    717.9 MLUPS
+  Converged:             2977/2977
+  Avg time/sample:       12.4s
+(.venv) rvn@atom:~/repos/xAdvCool$ 
+
+
 ## License
 
 CC-BY-4.0

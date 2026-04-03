@@ -37,7 +37,7 @@
       "description": "HDF5 file containing all simulation samples. Each top-level group is a sample keyed by sample_id, containing 5 datasets (mask, heat_source, velocity, pressure, temperature) and scalar attributes.",
       "contentUrl": "https://huggingface.co/datasets/tgautam03/xAdvCool/resolve/main/data.h5",
       "encodingFormat": "application/x-hdf5",
-      "sha256": "01779102d2e88c49fa2e548a34fd0e2465c25d8fe5cc353cf5e3b69a3aac19d3"
+      "sha256": "5cdb43ca08d57a206ef18e0f9940c57988d77483cbb24cc009ee69e38e6b1bf4"
     },
     {
       "@type": "sc:FileObject",
@@ -46,7 +46,7 @@
       "description": "Parquet metadata index with scalar parameters and performance metrics for each sample.",
       "contentUrl": "https://huggingface.co/datasets/tgautam03/xAdvCool/resolve/main/metadata.parquet",
       "encodingFormat": "application/x-parquet",
-      "sha256": "4b15ac9b785f277df08d18114ee7bd37cc52cf5fa3ed1ed832645a543adf1f79"
+      "sha256": "34159b84471848c5b823cf81cc5c90cf1ca2c78ef5cbc54cf06cf1c115f29768"
     }
   ],
   "recordSet": [
