@@ -5,7 +5,6 @@ xAdvCool is a GPU-accelerated Lattice Boltzmann (LBM) solver and ML benchmark su
 ---
 
 ## Repo layout
-
 ```
 xAdvCool/
 ├── src/                        Core physics & geometry (Warp/CUDA)
@@ -16,7 +15,6 @@ xAdvCool/
 ├── generate_dataset.py         Dataset generation pipeline
 ├── validate_analytical.py      Analytical validation suite (pytest-compatible)
 ├── analyze_dataset.py          Dataset statistics & publication figures
-├── generate_croissant.py       Croissant metadata for HuggingFace/NeurIPS
 ├── dataset_viewer.py           Interactive 3D field viewer (PyVista)
 ├── benchmark/                  ML benchmark suite
 │   ├── train.py                  Training entry point
@@ -31,6 +29,8 @@ xAdvCool/
     ├── failed_samples.json       Resume tracker for the generator
     └── cache/                    Per-sample tensor cache built by training
 ```
+
+`data.h5` can be downloaded from: https://huggingface.co/datasets/tgautam03/xAdvCool/tree/main
 
 ---
 
