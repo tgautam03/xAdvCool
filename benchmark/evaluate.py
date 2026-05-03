@@ -68,6 +68,7 @@ def evaluate(cfg: dict, checkpoint_path: str, split: str = "test") -> dict:
 
     # Dataset
     data_cfg = cfg["data"]
+    cache_dir = cfg["data"].get("cache_dir", "dataset/cache")
     ds = CHTDataset(
         h5_path=data_cfg["h5_path"],
         metadata_path=data_cfg["metadata_path"],
@@ -77,6 +78,7 @@ def evaluate(cfg: dict, checkpoint_path: str, split: str = "test") -> dict:
         target_fields=tuple(data_cfg.get("target_fields", ["velocity", "temperature", "pressure"])),
         crop_buffer=data_cfg.get("crop_buffer", True),
         norm_stats=norm_stats,
+        cache_dir=cache_dir,
     )
     loader = DataLoader(ds, batch_size=1, shuffle=False, num_workers=2)
 

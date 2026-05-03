@@ -45,35 +45,39 @@ def _subsample(
 def get_canonical_splits(
     metadata_path: str = "dataset/metadata.parquet",
     h5_path: str | list[str] = "dataset/data.h5",
-    train_ratio: float = 0.70,
+    test_ratio: float = 0.15,
     val_ratio: float = 0.15,
     seed: int = 42,
     max_samples: int | None = None,
 ) -> dict[str, list[str]]:
-    """70/15/15 split stratified by design_name.
+    """Split stratified by design_name: test first (fixed), then val from train pool.
+
+    Step 1: Carve out a fixed test set (same across all models for a given seed).
+    Step 2: Split the remaining pool into train/val (val used for early stopping).
 
     Args:
+        test_ratio: Fraction held out for testing (fixed across models).
+        val_ratio: Fraction of *original* data used for validation.
         max_samples: If set, subsample the training set to this many samples.
-            Useful for prototyping on large datasets.
 
     Returns {"train": [...sample_ids], "val": [...], "test": [...]}.
     """
     df = _valid_sample_ids(metadata_path, h5_path)
 
-    # First split: train vs (val+test)
-    sss1 = StratifiedShuffleSplit(n_splits=1, test_size=1.0 - train_ratio, random_state=seed)
-    train_idx, rest_idx = next(sss1.split(df, df["design_name"]))
+    # Step 1: Fixed test split (identical across all models for a given seed)
+    sss_test = StratifiedShuffleSplit(n_splits=1, test_size=test_ratio, random_state=seed)
+    trainval_idx, test_idx = next(sss_test.split(df, df["design_name"]))
 
-    # Second split: val vs test (equal halves of the remainder)
-    df_rest = df.iloc[rest_idx]
-    relative_val = val_ratio / (1.0 - train_ratio)
-    sss2 = StratifiedShuffleSplit(n_splits=1, test_size=1.0 - relative_val, random_state=seed)
-    val_idx_rel, test_idx_rel = next(sss2.split(df_rest, df_rest["design_name"]))
+    # Step 2: Val from the train pool (for early stopping)
+    df_trainval = df.iloc[trainval_idx]
+    relative_val = val_ratio / (1.0 - test_ratio)
+    sss_val = StratifiedShuffleSplit(n_splits=1, test_size=relative_val, random_state=seed)
+    train_idx_rel, val_idx_rel = next(sss_val.split(df_trainval, df_trainval["design_name"]))
 
     splits = {
-        "train": df.iloc[train_idx]["sample_id"].tolist(),
-        "val": df_rest.iloc[val_idx_rel]["sample_id"].tolist(),
-        "test": df_rest.iloc[test_idx_rel]["sample_id"].tolist(),
+        "train": df_trainval.iloc[train_idx_rel]["sample_id"].tolist(),
+        "val": df_trainval.iloc[val_idx_rel]["sample_id"].tolist(),
+        "test": df.iloc[test_idx]["sample_id"].tolist(),
     }
     return _subsample(splits, max_samples, seed)
 
@@ -88,15 +92,18 @@ def get_ood_splits(
 ) -> dict[str, list[str]]:
     """Leave-one-geometry-out split for OOD generalization (Task C).
 
-    Train/val from 4 geometry types, test_ood from the held-out type.
+    Test is the entire held-out geometry (fixed). Val is carved from
+    the remaining 4 geometry types (for early stopping).
     Returns {"train": [...], "val": [...], "test_ood": [...]}.
     """
     df = _valid_sample_ids(metadata_path, h5_path)
 
+    # Step 1: Fixed test — entire held-out geometry
     ood_mask = df["design_name"] == held_out_geometry
     df_ood = df[ood_mask]
     df_in = df[~ood_mask]
 
+    # Step 2: Val from the in-distribution pool (for early stopping)
     sss = StratifiedShuffleSplit(n_splits=1, test_size=val_ratio, random_state=seed)
     train_idx, val_idx = next(sss.split(df_in, df_in["design_name"]))
 
@@ -112,27 +119,33 @@ def get_geometry_only_splits(
     metadata_path: str = "dataset/metadata.parquet",
     h5_path: str | list[str] = "dataset/data.h5",
     heat_source_type: str = "uniform",
+    test_ratio: float = 0.15,
+    val_ratio: float = 0.15,
     seed: int = 42,
     max_samples: int | None = None,
 ) -> dict[str, list[str]]:
     """Subset for Task B: geometry-only prediction with fixed operating conditions.
 
-    Filters to a single heat_source_type, then applies 70/15/15 split.
+    Filters to a single heat_source_type, then splits: test first (fixed),
+    then val from the remaining pool (for early stopping).
     Returns {"train": [...], "val": [...], "test": [...]}.
     """
     df = _valid_sample_ids(metadata_path, h5_path)
     df = df[df["heat_source_type"] == heat_source_type].reset_index(drop=True)
 
-    sss1 = StratifiedShuffleSplit(n_splits=1, test_size=0.30, random_state=seed)
-    train_idx, rest_idx = next(sss1.split(df, df["design_name"]))
+    # Step 1: Fixed test split
+    sss_test = StratifiedShuffleSplit(n_splits=1, test_size=test_ratio, random_state=seed)
+    trainval_idx, test_idx = next(sss_test.split(df, df["design_name"]))
 
-    df_rest = df.iloc[rest_idx]
-    sss2 = StratifiedShuffleSplit(n_splits=1, test_size=0.5, random_state=seed)
-    val_idx_rel, test_idx_rel = next(sss2.split(df_rest, df_rest["design_name"]))
+    # Step 2: Val from the train pool (for early stopping)
+    df_trainval = df.iloc[trainval_idx]
+    relative_val = val_ratio / (1.0 - test_ratio)
+    sss_val = StratifiedShuffleSplit(n_splits=1, test_size=relative_val, random_state=seed)
+    train_idx_rel, val_idx_rel = next(sss_val.split(df_trainval, df_trainval["design_name"]))
 
     splits = {
-        "train": df.iloc[train_idx]["sample_id"].tolist(),
-        "val": df_rest.iloc[val_idx_rel]["sample_id"].tolist(),
-        "test": df_rest.iloc[test_idx_rel]["sample_id"].tolist(),
+        "train": df_trainval.iloc[train_idx_rel]["sample_id"].tolist(),
+        "val": df_trainval.iloc[val_idx_rel]["sample_id"].tolist(),
+        "test": df.iloc[test_idx]["sample_id"].tolist(),
     }
     return _subsample(splits, max_samples, seed)

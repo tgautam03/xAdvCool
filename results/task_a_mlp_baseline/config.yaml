@@ -13,11 +13,12 @@
       "pressure"
     ],
     "max_samples": null,
+    "cache_dir": "dataset/cache",
     "split": "canonical"
   },
   "training": {
     "epochs": 50,
-    "batch_size": 8,
+    "batch_size": 16,
     "lr": 0.001,
     "weight_decay": 1e-05,
     "scheduler": "cosine",
@@ -25,6 +26,8 @@
     "seed": 42,
     "amp": true,
     "checkpoint_every": 20,
+    "patience": 20,
+    "min_delta": 0.0,
     "output_dir": "results/task_a_mlp_baseline"
   },
   "task": "field_prediction",

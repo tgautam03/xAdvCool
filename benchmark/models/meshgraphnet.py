@@ -70,6 +70,7 @@ class EdgeConv3D(MessagePassing if HAS_PYG else nn.Module):
         )
         self.norm = nn.LayerNorm(node_dim)
 
+    @torch.amp.custom_fwd(device_type="cuda", cast_inputs=torch.float32)
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor) -> torch.Tensor:
         if HAS_PYG:
             out = self.propagate(edge_index, x=x, edge_attr=edge_attr)

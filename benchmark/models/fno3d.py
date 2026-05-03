@@ -24,18 +24,22 @@ class SpectralConv3d(nn.Module):
         self.modes2 = modes2
         self.modes3 = modes3
 
+        # Store weights as real tensors (last dim=2 for real/imag) so AMP grad scaler works
         scale = 1 / (in_channels * out_channels)
-        self.weights1 = nn.Parameter(scale * torch.randn(in_channels, out_channels, modes1, modes2, modes3, dtype=torch.cfloat))
-        self.weights2 = nn.Parameter(scale * torch.randn(in_channels, out_channels, modes1, modes2, modes3, dtype=torch.cfloat))
-        self.weights3 = nn.Parameter(scale * torch.randn(in_channels, out_channels, modes1, modes2, modes3, dtype=torch.cfloat))
-        self.weights4 = nn.Parameter(scale * torch.randn(in_channels, out_channels, modes1, modes2, modes3, dtype=torch.cfloat))
+        self.weights1 = nn.Parameter(scale * torch.randn(in_channels, out_channels, modes1, modes2, modes3, 2))
+        self.weights2 = nn.Parameter(scale * torch.randn(in_channels, out_channels, modes1, modes2, modes3, 2))
+        self.weights3 = nn.Parameter(scale * torch.randn(in_channels, out_channels, modes1, modes2, modes3, 2))
+        self.weights4 = nn.Parameter(scale * torch.randn(in_channels, out_channels, modes1, modes2, modes3, 2))
 
-    def _compl_mul3d(self, x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
+    def _compl_mul3d(self, x: torch.Tensor, w_real: torch.Tensor) -> torch.Tensor:
         # (B, in, m1, m2, m3), (in, out, m1, m2, m3) -> (B, out, m1, m2, m3)
+        w = torch.view_as_complex(w_real)
         return torch.einsum("bixyz,ioxyz->boxyz", x, w)
 
+    @torch.amp.custom_fwd(device_type="cuda", cast_inputs=torch.float32)
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B = x.shape[0]
+        x = x.float()
         # FFT
         x_ft = torch.fft.rfftn(x, dim=[-3, -2, -1])
 

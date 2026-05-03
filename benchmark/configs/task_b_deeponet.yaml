@@ -1,6 +1,6 @@
-# Task B: Geometry-only field prediction with 3D U-Net
+# Task B: Geometry-only field prediction with DeepONet (uniform heat source)
 task: field_prediction
-model: unet3d
+model: deeponet
 
 data:
   split: geometry_only
@@ -13,10 +13,10 @@ model_args:
   in_channels: 1
   out_channels: 5
   scalar_dim: 5
-  features: [32, 64, 128, 256]
+  latent_dim: 128
 
 training:
-  output_dir: results/task_b_unet3d
+  output_dir: results/task_b_deeponet
   epochs: 100
-  batch_size: 4
+  batch_size: 32
   lr: 1.0e-3

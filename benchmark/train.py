@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 from benchmark.data.dataset import CHTDataset
 from benchmark.data.normalization import compute_norm_stats
@@ -48,7 +49,7 @@ def _build_splits(cfg: dict) -> dict[str, list[str]]:
         raise ValueError(f"Unknown split type: {split_type}")
 
 
-def _build_dataset(cfg: dict, sample_ids: list[str], norm_stats) -> CHTDataset:
+def _build_dataset(cfg: dict, sample_ids: list[str], norm_stats, cache_dir=None) -> CHTDataset:
     data_cfg = cfg["data"]
     return CHTDataset(
         h5_path=data_cfg["h5_path"],
@@ -59,6 +60,7 @@ def _build_dataset(cfg: dict, sample_ids: list[str], norm_stats) -> CHTDataset:
         target_fields=tuple(data_cfg.get("target_fields", ["velocity", "temperature", "pressure"])),
         crop_buffer=data_cfg.get("crop_buffer", True),
         norm_stats=norm_stats,
+        cache_dir=cache_dir,
     )
 
 
@@ -77,8 +79,9 @@ def train(cfg: dict) -> None:
     splits = _build_splits(cfg)
     train_ids = splits["train"]
     val_ids = splits.get("val", splits.get("test_ood", []))
+    test_ids = splits.get("test", splits.get("test_ood", []))
 
-    print(f"Train: {len(train_ids)}, Val: {len(val_ids)}")
+    print(f"Train: {len(train_ids)}, Val: {len(val_ids)}, Test: {len(test_ids)} (held out)")
 
     # Normalization stats
     norm_stats = compute_norm_stats(
@@ -89,9 +92,10 @@ def train(cfg: dict) -> None:
         cache_dir=str(output_dir),
     )
 
-    # Datasets & loaders
-    train_ds = _build_dataset(cfg, train_ids, norm_stats)
-    val_ds = _build_dataset(cfg, val_ids, norm_stats)
+    # Datasets & loaders (shared cache across models for the same task)
+    pt_cache = cfg["data"].get("cache_dir", "dataset/cache")
+    train_ds = _build_dataset(cfg, train_ids, norm_stats, cache_dir=pt_cache)
+    val_ds = _build_dataset(cfg, val_ids, norm_stats, cache_dir=pt_cache)
 
     num_workers = train_cfg.get("num_workers", 4)
     train_loader = DataLoader(
@@ -139,8 +143,11 @@ def train(cfg: dict) -> None:
     # Logging
     writer = SummaryWriter(log_dir=str(output_dir / "tb"))
 
-    # Training loop
+    # Early stopping
+    patience = train_cfg.get("patience", 20)
+    min_delta = train_cfg.get("min_delta", 0.0)
     best_val_loss = float("inf")
+    epochs_without_improvement = 0
     target_key = "fields" if cfg["task"] == "field_prediction" else "scalars"
 
     for epoch in range(1, epochs + 1):
@@ -148,7 +155,8 @@ def train(cfg: dict) -> None:
         train_loss = 0.0
         t0 = time.time()
 
-        for batch_idx, (input_dict, target_dict) in enumerate(train_loader):
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch:3d}/{epochs}", leave=False)
+        for batch_idx, (input_dict, target_dict) in enumerate(pbar):
             input_dict = {k: v.to(device) for k, v in input_dict.items()}
             target = target_dict[target_key].to(device)
 
@@ -162,6 +170,7 @@ def train(cfg: dict) -> None:
             scaler.update()
 
             train_loss += loss.item()
+            pbar.set_postfix(loss=f"{loss.item():.4f}")
 
         scheduler.step()
         train_loss /= len(train_loader)
@@ -174,7 +183,7 @@ def train(cfg: dict) -> None:
         n_val = 0
 
         with torch.no_grad():
-            for input_dict, target_dict in val_loader:
+            for input_dict, target_dict in tqdm(val_loader, desc="Validating", leave=False):
                 input_dict = {k: v.to(device) for k, v in input_dict.items()}
                 target = target_dict[target_key].to(device)
 
@@ -205,10 +214,10 @@ def train(cfg: dict) -> None:
             f"Time: {elapsed:.1f}s"
         )
 
-        # Checkpoint
-        is_best = val_loss < best_val_loss
-        if is_best:
+        # Checkpoint & early stopping
+        if val_loss < best_val_loss - min_delta:
             best_val_loss = val_loss
+            epochs_without_improvement = 0
             torch.save({
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
@@ -216,6 +225,8 @@ def train(cfg: dict) -> None:
                 "val_loss": val_loss,
                 "config": cfg,
             }, output_dir / "best_model.pt")
+        else:
+            epochs_without_improvement += 1
 
         checkpoint_every = train_cfg.get("checkpoint_every", 20)
         if epoch % checkpoint_every == 0:
@@ -226,6 +237,10 @@ def train(cfg: dict) -> None:
                 "val_loss": val_loss,
                 "config": cfg,
             }, output_dir / f"checkpoint_epoch{epoch}.pt")
+
+        if epochs_without_improvement >= patience:
+            print(f"\nEarly stopping at epoch {epoch} (no improvement for {patience} epochs)")
+            break
 
     writer.close()
     # Save norm stats alongside model

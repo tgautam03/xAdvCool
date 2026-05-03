@@ -1,6 +1,6 @@
-# Task B: Geometry-only field prediction with 3D U-Net
+# Task B: Geometry-only field prediction with MLPBaseline (uniform heat source)
 task: field_prediction
-model: unet3d
+model: mlp_baseline
 
 data:
   split: geometry_only
@@ -13,10 +13,9 @@ model_args:
   in_channels: 1
   out_channels: 5
   scalar_dim: 5
-  features: [32, 64, 128, 256]
+  hidden_dim: 256
 
 training:
-  output_dir: results/task_b_unet3d
-  epochs: 100
-  batch_size: 4
-  lr: 1.0e-3
+  output_dir: results/task_b_mlp_baseline
+  epochs: 50
+  batch_size: 16

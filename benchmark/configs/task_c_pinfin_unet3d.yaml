@@ -1,0 +1,18 @@
+# Task C: OOD generalization — hold out Pin-Fin Staggered, test with U-Net
+task: field_prediction
+model: unet3d
+
+data:
+  split: ood_Pin-Fin_Staggered
+
+model_args:
+  in_channels: 2
+  out_channels: 5
+  scalar_dim: 5
+  features: [32, 64, 128, 256]
+
+training:
+  output_dir: results/task_c_pinfin_unet3d
+  epochs: 100
+  batch_size: 4
+  lr: 1.0e-3

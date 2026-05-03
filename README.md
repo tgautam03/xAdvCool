@@ -180,7 +180,6 @@ Dataset generation complete.
   Average throughput:    717.9 MLUPS
   Converged:             2977/2977
   Avg time/sample:       12.4s
-(.venv) rvn@atom:~/repos/xAdvCool$ 
 
 
 ## License

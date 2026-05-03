@@ -12,11 +12,12 @@
       "temperature",
       "pressure"
     ],
-    "max_samples": 100,
+    "max_samples": null,
+    "cache_dir": "dataset/cache",
     "split": "canonical"
   },
   "training": {
-    "epochs": 5,
+    "epochs": 100,
     "batch_size": 4,
     "lr": 0.001,
     "weight_decay": 1e-05,
@@ -25,6 +26,8 @@
     "seed": 42,
     "amp": true,
     "checkpoint_every": 20,
+    "patience": 20,
+    "min_delta": 0.0,
     "output_dir": "results/task_a_unet3d"
   },
   "task": "field_prediction",

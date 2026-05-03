@@ -8,6 +8,7 @@ data:
   target_fields: [velocity, temperature, pressure]
   # Set to subsample training set (null = use all). Useful for prototyping.
   max_samples: null
+  cache_dir: dataset/cache
 
 training:
   epochs: 100
@@ -19,3 +20,5 @@ training:
   seed: 42
   amp: true
   checkpoint_every: 20
+  patience: 20
+  min_delta: 0.0

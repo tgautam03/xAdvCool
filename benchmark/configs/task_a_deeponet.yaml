@@ -14,5 +14,5 @@ model_args:
 training:
   output_dir: results/task_a_deeponet
   epochs: 100
-  batch_size: 4
+  batch_size: 32
   lr: 1.0e-3

@@ -16,5 +16,5 @@ model_args:
 training:
   output_dir: results/task_a_fno3d
   epochs: 100
-  batch_size: 2
+  batch_size: 8
   lr: 1.0e-3

@@ -1,6 +1,6 @@
-# Task B: Geometry-only field prediction with 3D U-Net
+# Task B: Geometry-only field prediction with 3D Vision Transformer (uniform heat source)
 task: field_prediction
-model: unet3d
+model: vit3d
 
 data:
   split: geometry_only
@@ -13,10 +13,14 @@ model_args:
   in_channels: 1
   out_channels: 5
   scalar_dim: 5
-  features: [32, 64, 128, 256]
+  patch_size: [8, 8, 8]
+  embed_dim: 256
+  depth: 8
+  n_heads: 8
+  dropout: 0.1
 
 training:
-  output_dir: results/task_b_unet3d
+  output_dir: results/task_b_vit3d
   epochs: 100
-  batch_size: 4
-  lr: 1.0e-3
+  batch_size: 16
+  lr: 5.0e-4

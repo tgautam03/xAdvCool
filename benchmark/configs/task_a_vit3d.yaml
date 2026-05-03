@@ -18,5 +18,5 @@ model_args:
 training:
   output_dir: results/task_a_vit3d
   epochs: 100
-  batch_size: 2
+  batch_size: 16
   lr: 5.0e-4
